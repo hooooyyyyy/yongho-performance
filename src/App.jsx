@@ -122,7 +122,15 @@ function App() {
           const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/')
           const base64 = normalized + '='.repeat((4 - (normalized.length % 4)) % 4)
           const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
-          const data = JSON.parse(new TextDecoder().decode(bytes))
+          let jsonText
+          if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+            if (typeof DecompressionStream === 'undefined') throw new Error('이 브라우저는 압축된 가져오기 링크를 지원하지 않습니다.')
+            const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
+            jsonText = await new Response(stream).text()
+          } else {
+            jsonText = new TextDecoder().decode(bytes)
+          }
+          const data = JSON.parse(jsonText)
           const result = await importWorkoutData(data)
           setImportNotice(`${result.sessions}개 세션과 ${result.sets}개 세트를 이 기기에 가져왔어.`)
           window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
