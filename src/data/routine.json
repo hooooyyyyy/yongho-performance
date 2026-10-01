@@ -1,0 +1,76 @@
+{
+  "id": "sustain-build-phase-2",
+  "name": "Sustain Build · Phase 2",
+  "version": "2026.10.01",
+  "principle": "어깨 프레임 → 상부가슴 → 등 → 팔. 하체는 축구 퍼포먼스와 회복을 지킨다.",
+  "days": [
+    {
+      "id": "upper-a",
+      "sessionLabel": "A",
+      "recommendedDay": "월",
+      "name": "Upper A",
+      "focus": "상부가슴 · 광배 · 측면어깨",
+      "duration": "45–50분",
+      "accent": "blue",
+      "exercises": [
+        { "id": "incline-smith", "sets": 3, "reps": "6–8", "rir": "2", "rest": 180, "targetWeight": 65 },
+        { "id": "mag-lat-pulldown", "sets": 3, "reps": "8–10", "rir": "2", "rest": 120, "targetWeight": 55 },
+        { "id": "chest-press", "sets": 2, "reps": "8–12", "rir": "1–2", "rest": 90, "targetWeight": 50 },
+        { "id": "cable-lateral", "sets": 3, "reps": "12–18", "rir": "1–2", "rest": 75, "targetWeight": 12 },
+        { "id": "overhead-triceps", "sets": 2, "reps": "10–15", "rir": "1–2", "rest": 75, "targetWeight": null }
+      ]
+    },
+    {
+      "id": "lower-power",
+      "sessionLabel": "B",
+      "recommendedDay": "화",
+      "name": "Lower + Power",
+      "focus": "폭발력 · 하체 · 햄스트링",
+      "duration": "50–55분",
+      "accent": "amber",
+      "exercises": [
+        { "id": "countermovement-jump", "sets": 3, "reps": "3", "rir": "최대 속도", "rest": 75, "targetWeight": null },
+        { "id": "leg-press", "sets": 3, "reps": "6–10", "rir": "2–3", "rest": 180, "targetWeight": 290 },
+        { "id": "bulgarian-split-squat", "sets": 2, "reps": "8–10 / 다리", "rir": "2", "rest": 120, "targetWeight": null },
+        { "id": "db-rdl", "sets": 2, "reps": "8–10", "rir": "2–3", "rest": 120, "targetWeight": 20 },
+        { "id": "seated-leg-curl", "sets": 3, "reps": "10–12", "rir": "1–2", "rest": 90, "targetWeight": 67.5 },
+        { "id": "calf-raise", "sets": 2, "reps": "10–15", "rir": "1–2", "rest": 75, "targetWeight": null }
+      ]
+    },
+    {
+      "id": "upper-b",
+      "sessionLabel": "C",
+      "recommendedDay": "목",
+      "name": "Upper B",
+      "focus": "등 두께 · 상부가슴 · 어깨",
+      "duration": "50–55분",
+      "accent": "violet",
+      "exercises": [
+        { "id": "shoulder-press", "sets": 2, "reps": "6–10", "rir": "2", "rest": 150, "targetWeight": 40 },
+        { "id": "incline-machine-press", "sets": 3, "reps": "8–10", "rir": "2", "rest": 120, "targetWeight": 42.5 },
+        { "id": "chest-supported-row", "sets": 3, "reps": "8–10", "rir": "2", "rest": 120, "targetWeight": 50 },
+        { "id": "pullup-or-lat", "sets": 2, "reps": "8–10", "rir": "2", "rest": 120, "targetWeight": 55 },
+        { "id": "cable-lateral", "sets": 3, "reps": "12–18", "rir": "1–2", "rest": 75, "targetWeight": 12 },
+        { "id": "reverse-pec-deck", "sets": 2, "reps": "12–20", "rir": "1–2", "rest": 75, "targetWeight": 35 },
+        { "id": "cable-curl", "sets": 2, "reps": "10–15", "rir": "1–2", "rest": 75, "targetWeight": null }
+      ]
+    },
+    {
+      "id": "frame-arms",
+      "sessionLabel": "D",
+      "recommendedDay": "금",
+      "name": "Frame + Arms",
+      "focus": "광배 · 가슴 · 측면어깨 · 팔",
+      "duration": "35–45분",
+      "accent": "lime",
+      "exercises": [
+        { "id": "one-arm-lat-pulldown", "sets": 2, "reps": "10–12 / 팔", "rir": "2", "rest": 90, "targetWeight": null },
+        { "id": "cable-fly", "sets": 2, "reps": "10–15", "rir": "1–2", "rest": 75, "targetWeight": null },
+        { "id": "cable-lateral", "sets": 4, "reps": "12–20", "rir": "1–2", "rest": 60, "targetWeight": 12 },
+        { "id": "reverse-pec-deck", "sets": 2, "reps": "15–20", "rir": "1–2", "rest": 60, "targetWeight": 35 },
+        { "id": "cable-curl", "sets": 2, "reps": "10–15", "rir": "1–2", "rest": 60, "targetWeight": null },
+        { "id": "triceps-pushdown", "sets": 2, "reps": "10–15", "rir": "1–2", "rest": 60, "targetWeight": null }
+      ]
+    }
+  ]
+}
