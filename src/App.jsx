@@ -33,6 +33,7 @@ import {
   Upload,
   X,
 } from 'lucide-react'
+import { makeRows } from './lib/sessionRows.js'
 import routine from './data/routine.json'
 import exerciseLibrary from './data/exercises.json'
 import { parseQuickWorkout } from './lib/quickParser.js'
@@ -133,7 +134,7 @@ function App() {
           }
           const data = JSON.parse(jsonText)
           const result = await importWorkoutData(data)
-          setImportNotice(`${result.sessions}개 세션과 ${result.sets}개 세트를 이 기기에 가져왔어.`)
+          setImportNotice(`새 기록 ${result.imported}개 · 중복 ${result.duplicates}개 · 충돌 ${result.conflicts}개. 충돌 기록은 기존 내용을 유지하고 백업에 별도로 보존했어.`)
           window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
         } catch (error) {
           setImportNotice(`기록을 가져오지 못했어: ${error.message}`)
@@ -141,7 +142,10 @@ function App() {
       }
       await refreshInsights()
     }
-    initialize()
+    const onBlocked = () => setImportNotice('기록 업데이트를 위해 다른 탭이나 열려 있는 앱을 닫고 다시 열어주세요.')
+    window.addEventListener('yp:storage-blocked', onBlocked)
+    initialize().catch((error) => setImportNotice(`기록을 열지 못했어: ${error.message}. 데이터는 삭제하지 않았어.`))
+    return () => window.removeEventListener('yp:storage-blocked', onBlocked)
   }, [refreshInsights])
 
   useEffect(() => {
@@ -376,7 +380,7 @@ function ReportScreen({ history, completedSets, onDataChanged }) {
     if (!file) return
     try {
       const result = await importWorkoutData(JSON.parse(await file.text()))
-      setBackupMessage(`${result.sessions}개 세션과 ${result.sets}개 세트를 복원했어.`)
+      setBackupMessage(`새 기록 ${result.imported}개 · 중복 ${result.duplicates}개 · 충돌 ${result.conflicts}개. 충돌 내용은 백업 파일에 별도로 보존했어.`)
       await onDataChanged()
     } catch (error) { setBackupMessage(error.message) }
     event.target.value = ''
@@ -429,7 +433,7 @@ function WorkoutScreen({ day, onBack, onFinish, onStartTimer }) {
 
   const load = useCallback(async () => {
     const currentSession = await startWorkoutSession(date, day)
-    const [currentLogs, ...priorRows] = await Promise.all([getDayLog(date, day.id), ...[...new Set(day.exercises.map((exercise) => exercise.id))].map((exerciseId) => getPreviousExerciseLog(exerciseId, date))])
+    const [currentLogs, ...priorRows] = await Promise.all([getDayLog(date, day.id, { includeDeleted: true }), ...[...new Set(day.exercises.map((exercise) => exercise.id))].map((exerciseId) => getPreviousExerciseLog(exerciseId, date))])
     setLogs(currentLogs)
     setPrevious(Object.fromEntries([...new Set(day.exercises.map((exercise) => exercise.id))].map((exerciseId, index) => [exerciseId, priorRows[index]])))
     setSession(currentSession)
@@ -442,14 +446,17 @@ function WorkoutScreen({ day, onBack, onFinish, onStartTimer }) {
   const updateLocalLog = (entry) => setLogs((current) => [...current.filter((item) => !(item.exerciseId === entry.exerciseId && item.setIndex === entry.setIndex)), entry])
   const handleSetSave = async (exercise, row, startRest = false, restSeconds = exercise.rest) => {
     const entry = {
-      date, dayId: day.id, exerciseId: exercise.id, exerciseOrder: day.exercises.findIndex((item) => item.id === exercise.id), setIndex: row.setIndex,
+      id: row.id, date, dayId: day.id, exerciseId: exercise.id, exerciseOrder: day.exercises.findIndex((item) => item.id === exercise.id), setIndex: row.setIndex,
       setType: row.setType, weight: row.weight === '' ? null : Number(row.weight), weightLabel: row.weightLabel ?? '', reps: row.reps === '' ? null : Number(row.reps), rir: row.rir ?? '', completed: Boolean(row.completed), note: row.note ?? '',
     }
-    await saveSet(entry)
-    updateLocalLog({ ...entry, id: `${date}:${day.id}:${exercise.id}:${row.setIndex}` })
+    const id = await saveSet(entry)
+    updateLocalLog({ ...entry, id, deletedAt: null })
     if (startRest && row.completed) onStartTimer(restSeconds)
   }
-  const handleDelete = async (exercise, row) => { await deleteSet({ date, dayId: day.id, exerciseId: exercise.id, setIndex: row.setIndex }); setLogs((current) => current.filter((item) => !(item.exerciseId === exercise.id && item.setIndex === row.setIndex))) }
+  const handleDelete = async (exercise, row) => {
+    const deleted = await deleteSet({ ...row, date, dayId: day.id, exerciseId: exercise.id, setIndex: row.setIndex })
+    updateLocalLog(deleted)
+  }
   const patchSession = async (patch) => { const updated = await updateWorkoutSession(date, day.id, patch); setSession(updated); return updated }
   const updateRest = async (exerciseId, seconds) => patchSession({ restOverrides: { ...(session?.restOverrides ?? {}), [exerciseId]: seconds } })
   const updateExerciseNote = async (exerciseId, note) => patchSession({ exerciseNotes: { ...(session?.exerciseNotes ?? {}), [exerciseId]: note } })
@@ -470,7 +477,7 @@ function WorkoutScreen({ day, onBack, onFinish, onStartTimer }) {
     setExternalRevision((value) => value + 1)
   }
 
-  const completed = logs.filter((item) => item.completed).length
+  const completed = logs.filter((item) => item.completed && !item.deletedAt).length
   const elapsedSec = session?.durationSec ?? (session?.startedAt ? Math.max(0, Math.floor((now - new Date(session.startedAt).getTime()) / 1000)) : 0)
   const finishWorkout = async () => { await completeWorkoutSession(date, day.id, { durationSec: elapsedSec }); window.dispatchEvent(new CustomEvent('yp:log-updated')); onFinish() }
 
@@ -485,13 +492,6 @@ function WorkoutScreen({ day, onBack, onFinish, onStartTimer }) {
   </div>
 }
 
-function makeRows(exercise, logs) {
-  const stored = [...logs].sort((a, b) => (a.setIndex ?? 0) - (b.setIndex ?? 0)).map((row) => ({ ...row, weight: row.weight ?? '', reps: row.reps ?? '', rir: row.rir ?? '', setType: row.setType ?? 'work' }))
-  const storedIndices = new Set(stored.map((row) => row.setIndex))
-  const defaults = Array.from({ length: exercise.sets }, (_, setIndex) => ({ setIndex, setType: 'work', weight: exercise.targetWeight ?? '', weightLabel: '', reps: '', rir: exercise.rir ?? '', completed: false })).filter((row) => !storedIndices.has(row.setIndex))
-  return [...stored, ...defaults].sort((a, b) => a.setIndex - b.setIndex)
-}
-
 function LogExerciseCard({ exercise, index, logs, previous, restValue, exerciseNote, onSave, onDelete, onRestChange, onNoteChange }) {
   const detail = exerciseLibrary[exercise.id]
   const [tipsOpen, setTipsOpen] = useState(false)
@@ -501,7 +501,7 @@ function LogExerciseCard({ exercise, index, logs, previous, restValue, exerciseN
   const [rows, setRows] = useState(() => makeRows(exercise, logs))
   const updateRow = (setIndex, patch) => setRows((current) => current.map((row) => row.setIndex === setIndex ? { ...row, ...patch } : row))
   const persistRow = (row, patch = {}, startRest = false) => { const next = { ...row, ...patch }; updateRow(row.setIndex, patch); return onSave(exercise, next, startRest, restSeconds) }
-  const addRow = () => setRows((current) => [...current, { setIndex: Math.max(-1, ...current.map((row) => row.setIndex)) + 1, setType: 'work', weight: exercise.targetWeight ?? '', weightLabel: '', reps: '', rir: exercise.rir ?? '', completed: false }])
+  const addRow = () => setRows((current) => [...current, { setIndex: Math.max(-1, ...current.map((row) => row.setIndex), ...logs.map((row) => row.setIndex)) + 1, setType: 'work', weight: exercise.targetWeight ?? '', weightLabel: '', reps: '', rir: exercise.rir ?? '', completed: false }])
   const removeRow = async (row) => { setRows((current) => current.filter((item) => item.setIndex !== row.setIndex)); await onDelete(exercise, row) }
   const previousText = previous.length ? previous.map((row) => `${setTypeLabels[row.setType] ? `${setTypeLabels[row.setType]} ` : ''}${row.weightLabel || (row.weight != null ? `${row.weight}kg` : '–')} × ${row.reps ?? '–'}`).join(' · ') : '첫 기록 — 오늘이 기준점이 된다'
   const changeRest = (next) => { const safe = Math.max(15, Math.min(600, next)); setRestSeconds(safe); onRestChange(exercise.id, safe) }
