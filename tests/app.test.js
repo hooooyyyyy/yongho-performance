@@ -12,9 +12,12 @@ test('completion flushes unblurred inputs, keeps original date and opens daily c
   globalThis.window = dom.window; globalThis.document = dom.window.document
   Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true })
   globalThis.HTMLElement = dom.window.HTMLElement; globalThis.CustomEvent = dom.window.CustomEvent
+  const RealBroadcastChannel = globalThis.BroadcastChannel
+  // JSDOM does not implement browser BroadcastChannel; a Node channel keeps the test alive.
+  globalThis.BroadcastChannel = undefined
   window.scrollTo = () => {}
   const { render, fireEvent, screen, waitFor, cleanup } = await import('@testing-library/react')
-  const server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true, entries: [] }, plugins: [react()], server: { middlewareMode: true }, appType: 'custom' })
+  const server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true, entries: [] }, plugins: [react()], server: { middlewareMode: true, hmr: false }, appType: 'custom' })
   const RealDate = globalThis.Date
   try {
     const { default: App } = await server.ssrLoadModule('/src/App.jsx')
@@ -58,5 +61,5 @@ test('completion flushes unblurred inputs, keeps original date and opens daily c
     assert.equal((await storage.reportArchive.list()).length, 2)
     globalThis.Date = RealDate
     await storage.repository.close()
-  } finally { globalThis.Date = RealDate; cleanup(); await server.close(); dom.window.close() }
+  } finally { globalThis.Date = RealDate; cleanup(); await server.close(); dom.window.close(); globalThis.BroadcastChannel = RealBroadcastChannel }
 })

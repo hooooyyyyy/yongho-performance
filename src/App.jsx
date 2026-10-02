@@ -8,6 +8,7 @@ import {
   CircleAlert,
   ClipboardList,
   Clock3,
+  Cloud,
   Dumbbell,
   FileText,
   Flame,
@@ -26,6 +27,8 @@ import {
   X,
 } from 'lucide-react'
 import RecordsScreen from './components/RecordsScreen.jsx'
+import CloudScreen, { cloudStatus } from './components/CloudScreen.jsx'
+import { useCloudSync } from './lib/cloud/useCloudSync.js'
 import { createWorkoutWrites } from './lib/workoutWrites.js'
 import { makeRows } from './lib/sessionRows.js'
 import routine from './data/routine.json'
@@ -88,6 +91,8 @@ function App() {
   const [history, setHistory] = useState([])
   const [completedSets, setCompletedSets] = useState([])
   const [importNotice, setImportNotice] = useState('')
+  const cloud = useCloudSync(activeWorkout)
+  useEffect(() => { if (cloud.recovery) setScreen('cloud') }, [cloud.recovery])
   const selectedDay = routine.days.find((day) => day.id === selectedDayId) ?? routine.days[0]
 
   const refreshInsights = useCallback(async () => {
@@ -294,11 +299,12 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header className="app-header"><div className="brand-mark" aria-hidden="true">YP</div><div className="brand-name"><span>YONGHO</span><strong>PERFORMANCE</strong></div><div className="phase-badge">PHASE 2</div></header>
+      <header className="app-header"><div className="brand-mark" aria-hidden="true">YP</div><div className="brand-name"><span>YONGHO</span><strong>PERFORMANCE</strong></div><button className="cloud-status-button" aria-label="계정과 동기화" onClick={() => showScreen('cloud')}><Cloud size={16} /><span>{cloudStatus(cloud)}</span></button></header>
       <main>
         {screen === 'today' && <TodayScreen nextDay={nextDay} history={history.filter((session) => session.status !== 'started')} importNotice={importNotice} onDismissImport={() => setImportNotice('')} onStartDay={startDay} onOpenRoutine={openRoutine} />}
         {screen === 'routine' && <RoutineScreen selectedDay={selectedDay} setSelectedDayId={setSelectedDayId} onStartDay={startDay} />}
         {screen === 'report' && <RecordsScreen history={history} completedSets={completedSets} focusDate={recordFocus.date} focusSessionId={recordFocus.sessionId} onDataChanged={refreshInsights} onResume={startDay} />}
+        {screen === 'cloud' && <CloudScreen cloud={cloud} />}
       </main>
       <nav className="bottom-nav" aria-label="주요 메뉴">
         <button className={screen === 'today' ? 'active' : ''} onClick={() => showScreen('today')}><Home size={21} /><span>오늘</span></button>

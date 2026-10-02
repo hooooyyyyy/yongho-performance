@@ -439,3 +439,27 @@ button:disabled { opacity: .5; cursor: wait; }
 .rule-insight { margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--line); }
 .rule-insight strong { font-size: .86rem; }.rule-insight p { color: var(--blue-soft); font-size: .83rem; }.rule-insight small { color: var(--muted); line-height: 1.6; }
 .distribution-scroll { overflow-x: auto; }.distribution-table { width: 100%; border-collapse: collapse; font-size: .73rem; }.distribution-table th, .distribution-table td { padding: 12px 6px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }.distribution-table th:first-child { text-align: left; color: var(--muted); }.distribution-table td { color: var(--blue-soft); font-variant-numeric: tabular-nums; }
+.cloud-status-button { margin-left: auto; display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 42px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 13px; color: var(--blue); background: var(--surface); font-size: .67rem; cursor: pointer; }
+.cloud-card { margin-bottom: 14px; }
+.cloud-card h2 { font-size: 1.1rem; margin-bottom: 12px; }
+.cloud-card p { font-size: .82rem; line-height: 1.6; overflow-wrap: anywhere; }
+.cloud-heading { display: flex; gap: 9px; align-items: center; color: var(--blue); margin-bottom: 12px; }
+.cloud-card small { display: block; font-size: .75rem; line-height: 1.6; color: var(--muted); }
+.cloud-email { font-weight: 700; }
+.cloud-form { display: grid; gap: 14px; margin-top: 16px; }
+.cloud-form label { display: grid; gap: 7px; color: var(--muted); font-size: .8rem; }
+.cloud-form input { width: 100%; min-height: 50px; border: 1px solid var(--line); border-radius: 12px; background: #080c12; color: var(--text); padding: 12px; font-size: 16px; }
+.cloud-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px; }
+.cloud-card .primary-button { margin-top: 12px; }
+.cloud-card button:disabled { opacity: .5; cursor: default; }
+.cloud-card .text-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; }
+.cloud-table-wrap { overflow-x: auto; margin: 14px 0; }
+.cloud-merge-table { width: 100%; border-collapse: collapse; font-size: .77rem; }
+.cloud-merge-table th, .cloud-merge-table td { padding: 12px 6px; text-align: center; border-bottom: 1px solid var(--line); }
+.cloud-merge-table td { font-variant-numeric: tabular-nums; color: var(--blue); font-weight: 800; }
+.cloud-card details { margin: 14px 0; font-size: .8rem; }
+.cloud-card summary { min-height: 40px; cursor: pointer; color: var(--blue); }
+.cloud-record { padding: 12px; margin: 8px 0; border: 1px solid var(--line); border-radius: 12px; background: rgba(91,184,255,.04); }
+.cloud-record pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .72rem; line-height: 1.55; max-height: 340px; overflow-y: auto; }
+.cloud-conflict { padding: 12px; border: 1px solid rgba(255,192,91,.35); border-radius: 14px; margin: 14px 0; }
+.cloud-conflict h3 { font-size: .95rem; }

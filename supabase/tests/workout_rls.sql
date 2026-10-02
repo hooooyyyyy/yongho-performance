@@ -8,6 +8,7 @@ select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000001
 do $$
 declare response jsonb;
 begin
+  if not (public.workout_sync_status() ->> 'ready')::boolean then raise exception 'sync readiness failed'; end if;
   response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'sessions', 'sample', '{"id":"sample","revision":"r1","journal":"Synthetic A"}', 0);
   if not (response ->> 'ok')::boolean or (response #>> '{record,version}')::int <> 1 then raise exception 'first write failed'; end if;
   response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'sessions', 'sample', '{"id":"sample","revision":"r1","journal":"Synthetic A"}', 0);
@@ -18,11 +19,13 @@ begin
   if (response ->> 'ok')::boolean or response #>> '{record,payload,revision}' <> 'r2' then raise exception 'stale version overwrote data'; end if;
   if (select count(*) from public.workout_records) <> 1 then raise exception 'owner read failed'; end if;
   if (select count(*) from public.workout_analyses) <> 1 then raise exception 'owner analysis read failed'; end if;
-  response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'reports', 'report-sample', '{"id":"report-sample","revision":"report-r1"}', 0);
+  response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'reports', 'report-sample', '{"id":"report-sample","revision":"report-r1","weekStart":"2030-02-04"}', 0);
   if not (response ->> 'ok')::boolean then raise exception 'report create failed'; end if;
-  response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'reports', 'report-sample', '{"id":"report-sample","revision":"report-r1"}', 0);
-  if not (response ->> 'ok')::boolean then raise exception 'report retry failed'; end if;
-  response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'reports', 'report-sample', '{"id":"report-sample","revision":"report-r2"}', 1);
+  response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'reports', 'report-sample', '{"id":"report-sample","revision":"report-r1","weekStart":"2030-02-04"}', 0);
+  if not (response ->> 'ok')::boolean or (response #>> '{record,reportVersion}')::int <> 1 then raise exception 'report retry failed'; end if;
+  response := public.write_workout_record('00000000-0000-4000-8000-000000000001','reports','report-second','{"id":"report-second","revision":"second","weekStart":"2030-02-04"}',0);
+  if (response #>> '{record,reportVersion}')::int <> 2 then raise exception 'account numbering failed'; end if;
+  response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'reports', 'report-sample', '{"id":"report-sample","revision":"report-r2","weekStart":"2030-02-04"}', 1);
   if (response ->> 'ok')::boolean then raise exception 'immutable report overwritten'; end if;
   begin
     update public.workout_records set payload = '{"id":"sample","revision":"bypass"}';
@@ -35,6 +38,10 @@ begin
   begin
     delete from public.workout_records;
     raise exception 'direct delete must be denied';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform count(*) from public.workout_report_sequences;
+    raise exception 'report counters must be private';
   exception when insufficient_privilege then null; end;
   begin
     insert into public.workout_analyses(user_id,status,session_ids,input_revisions) values ('00000000-0000-4000-8000-000000000001','pending',array['sample'],'{}');
@@ -62,6 +69,10 @@ begin
   begin
     perform count(*) from public.workout_records;
     raise exception 'anonymous read must be denied';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform public.workout_sync_status();
+    raise exception 'anonymous setup RPC must be denied';
   exception when insufficient_privilege then null; end;
   begin
     perform public.write_workout_record('00000000-0000-4000-8000-000000000001','sessions','sample','{"id":"sample","revision":"anon"}',2);
