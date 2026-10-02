@@ -10,11 +10,14 @@ export function createSupabaseWorkoutRepository(client) {
     async list(expectedAccountId) {
       const accountId = await getAccountId()
       if (!accountId || accountId !== expectedAccountId) throw new Error('로그인 계정이 변경됐습니다.')
+      const { data: readiness, error: setupError } = await client.rpc('workout_sync_status')
+      if (setupError) throw setupError
+      if (!readiness?.ready || readiness.contractVersion !== 1) throw new Error('Supabase 기록 보관함의 비공개 접근 설정을 확인해주세요. 동기화를 중단했습니다.')
       const records = []
       for (let offset = 0; ; offset += 500) {
-        const { data, error } = await client.from('workout_records').select('kind,id,payload,version').eq('user_id', accountId).order('kind').order('id').range(offset, offset + 499)
+        const { data, error } = await client.from('workout_records').select('kind,id,payload,version,report_version').eq('user_id', accountId).order('kind').order('id').range(offset, offset + 499)
         if (error) throw error
-        records.push(...data)
+        records.push(...data.map(({ report_version, ...row }) => ({ ...row, reportVersion: report_version })))
         if (data.length < 500) return records
       }
     },

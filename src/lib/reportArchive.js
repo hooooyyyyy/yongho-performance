@@ -63,7 +63,7 @@ export function createReportArchive(repository) {
     async save({ contextId, requestId, report, analysisType = 'gpt' }) {
       validateReport(report)
       if (typeof requestId !== 'string' || !requestId.trim() || !['local-rules', 'gpt'].includes(analysisType)) throw new Error('리포트 요청 ID와 분석 종류를 확인해주세요.')
-      return repository.transaction(['reports', 'meta', 'outbox'], 'readwrite', async (tx) => {
+      const saved = await repository.transaction(['reports', 'meta', 'outbox'], 'readwrite', async (tx) => {
         const prior = await tx.objectStore('reports').index('by-request').get(requestId)
         if (prior) {
           if (prior.contextId !== contextId || prior.analysisType !== analysisType || !sameContent(prior.report, report)) throw new Error('같은 요청 ID에 다른 리포트가 있습니다. 재분석에는 새 요청 ID를 사용해주세요.')
@@ -78,10 +78,13 @@ export function createReportArchive(repository) {
         await tx.objectStore('outbox').put({ key: recordKey('reports', row.id), kind: 'reports', id: row.id, revision: row.revision })
         return row
       })
+      repository.notifyWrite?.()
+      return saved
     },
     async list() {
       const snapshot = await repository.snapshot()
-      return active(snapshot.reports).sort((a, b) => b.weekStart.localeCompare(a.weekStart) || b.version - a.version).map((r) => ({ ...r, stale: sourceChanged(r, snapshot) }))
+      const numbers = new Map(snapshot.meta.filter((m) => m.key.startsWith('sync-report-version:')).map((m) => [m.key.slice('sync-report-version:'.length), m.version]))
+      return active(snapshot.reports).map((r) => ({ ...r, accountVersion: numbers.get(r.id), stale: sourceChanged(r, snapshot) })).sort((a, b) => b.weekStart.localeCompare(a.weekStart) || (b.accountVersion ?? b.version) - (a.accountVersion ?? a.version) || b.generatedAt.localeCompare(a.generatedAt))
     },
   }
 }

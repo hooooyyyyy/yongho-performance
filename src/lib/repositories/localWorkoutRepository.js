@@ -72,6 +72,7 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
     try { const result = await work(tx); await tx.done; return result }
     catch (error) { try { tx.abort() } catch { /* already aborted */ } await tx.done.catch(() => {}); throw error }
   }
+  const notifyWrite = () => globalThis.window?.dispatchEvent(new window.CustomEvent('yp:local-write'))
   return {
     async get(kind, id, { includeDeleted = false } = {}) {
       const row = await (await dbPromise).get(kind, id)
@@ -86,7 +87,8 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
       return includeDeleted ? rows : rows.filter((row) => !row.deletedAt)
     },
     async mutate(kind, id, change) {
-      return transaction([kind, 'outbox'], 'readwrite', async (tx) => {
+      let changed = false
+      const result = await transaction([kind, 'outbox'], 'readwrite', async (tx) => {
         const existing = await tx.objectStore(kind).get(id)
         const next = change(existing)
         if (!next) return existing
@@ -95,8 +97,11 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
         const row = normalizeRecord(kind, { ...next, id, createdAt: existing?.createdAt ?? now, updatedAt: now, revision: revision() })
         await tx.objectStore(kind).put(row)
         await tx.objectStore('outbox').put({ key: recordKey(kind, id), kind, id, revision: row.revision })
+        changed = true
         return row
       })
+      if (changed) notifyWrite()
+      return result
     },
     async snapshot() {
       return transaction([...kinds, 'outbox', 'meta', 'conflicts'], 'readonly', async (tx) => {
@@ -108,7 +113,7 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
       const rows = kinds.flatMap((kind) => (data[kind] ?? []).map((row) => ({ kind, row: normalizeRecord(kind, row) })))
       const keys = rows.map(({ kind, row }) => recordKey(kind, row.id))
       if (new Set(keys).size !== keys.length) throw new Error('백업에 중복된 ID가 있습니다.')
-      return transaction([...kinds, 'outbox', 'conflicts', 'meta'], 'readwrite', async (tx) => {
+      const result = await transaction([...kinds, 'outbox', 'conflicts', 'meta'], 'readwrite', async (tx) => {
         let imported = 0; let duplicates = 0; let conflicts = 0
         for (const { kind, row } of rows) {
           const existing = await tx.objectStore(kind).get(row.id)
@@ -135,8 +140,11 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
         }
         return { sessions: data.sessions.length, sets: data.sets.length, imported, duplicates, conflicts }
       })
+      if (result.imported) notifyWrite()
+      return result
     },
     transaction,
+    notifyWrite,
     async close() { (await dbPromise).close() },
   }
 }
