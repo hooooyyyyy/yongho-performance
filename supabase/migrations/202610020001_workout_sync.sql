@@ -2,7 +2,7 @@
 begin;
 create table public.workout_records (
   user_id uuid not null references auth.users(id),
-  kind text not null check (kind in ('sessions', 'sets')),
+  kind text not null check (kind in ('sessions', 'sets', 'reports')),
   id text not null check (length(id) between 1 and 512),
   payload jsonb not null check (jsonb_typeof(payload) = 'object'),
   version bigint not null default 1 check (version > 0),
@@ -27,7 +27,7 @@ declare
   saved public.workout_records%rowtype;
 begin
   if uid is null or uid <> p_account_id then raise exception 'Authentication/account mismatch' using errcode = '42501'; end if;
-  if p_kind not in ('sessions', 'sets') or p_id is null or p_payload is null or p_expected_version is null or p_expected_version < 0
+  if p_kind not in ('sessions', 'sets', 'reports') or p_id is null or p_payload is null or p_expected_version is null or p_expected_version < 0
     or p_payload ->> 'id' is distinct from p_id or p_payload ->> 'revision' is null then
     raise exception 'Invalid record envelope' using errcode = '22023';
   end if;
@@ -37,7 +37,7 @@ begin
   if current_row.version is not null and current_row.payload = p_payload then
     return jsonb_build_object('ok', true, 'record', jsonb_build_object('kind', p_kind, 'id', p_id, 'payload', current_row.payload, 'version', current_row.version));
   end if;
-  if coalesce(current_row.version, 0) <> p_expected_version then
+  if (p_kind = 'reports' and current_row.version is not null) or coalesce(current_row.version, 0) <> p_expected_version then
     return jsonb_build_object('ok', false, 'record', case when current_row.version is null then null else jsonb_build_object('kind', p_kind, 'id', p_id, 'payload', current_row.payload, 'version', current_row.version) end);
   end if;
   insert into public.workout_records(user_id, kind, id, payload, version) values (uid, p_kind, p_id, p_payload, 1)

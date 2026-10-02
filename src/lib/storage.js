@@ -1,6 +1,8 @@
-import { createLocalWorkoutRepository, sessionId, setId } from './repositories/localWorkoutRepository.js'
+import { createReportArchive } from './reportArchive.js'
+import { createLocalWorkoutRepository, sessionId, setId, sameContent } from './repositories/localWorkoutRepository.js'
 
 export const repository = createLocalWorkoutRepository()
+export const reportArchive = createReportArchive(repository)
 
 export async function getDayLog(date, dayId, options = {}) {
   const rows = await repository.query('sets', 'by-date-day', IDBKeyRange.only([date, dayId]), options)
@@ -8,7 +10,10 @@ export async function getDayLog(date, dayId, options = {}) {
 }
 
 export async function saveSet(entry) {
-  const row = await repository.mutate('sets', setId(entry), (existing) => ({ ...existing, ...entry, deletedAt: null, setType: entry.setType ?? existing?.setType ?? 'work' }))
+  const row = await repository.mutate('sets', setId(entry), (existing) => {
+    const next = { ...existing, ...entry, id: existing?.id ?? setId(entry), deletedAt: null, setType: entry.setType ?? existing?.setType ?? 'work' }
+    return existing && sameContent(existing, next) ? null : next
+  })
   return row.id
 }
 
@@ -43,25 +48,34 @@ function mergeSession(existing, date, dayId, patch) {
   for (const key of ['condition', 'restOverrides', 'exerciseNotes']) {
     if (patch[key]) result[key] = { ...existing?.[key], ...patch[key] }
   }
+  if (typeof patch.journal === 'string' && patch.journal !== (existing?.journal ?? '')) {
+    const prior = existing?.journalEntries ?? (existing?.journal ? [{ id: crypto.randomUUID(), text: existing.journal, source: 'legacy', createdAt: existing.updatedAt ?? existing.createdAt }] : [])
+    result.journalEntries = [...prior, { id: crypto.randomUUID(), text: patch.journal, source: patch.journalSource ?? 'app', createdAt: new Date().toISOString() }]
+  }
   return result
 }
 
 export async function updateWorkoutSession(date, dayId, patch) {
-  return repository.mutate('sessions', sessionId(date, dayId), (existing) => mergeSession(existing, date, dayId, patch))
+  return repository.mutate('sessions', sessionId(date, dayId), (existing) => {
+    const next = mergeSession(existing, date, dayId, patch)
+    return existing && sameContent(existing, next) ? null : next
+  })
 }
 
 export async function completeWorkoutSession(date, dayId, patch = {}) {
   return repository.mutate('sessions', sessionId(date, dayId), (existing) => {
-    const completedAt = new Date().toISOString()
+    const completedAt = existing?.completedAt ?? new Date().toISOString()
     const startedAt = existing?.startedAt ?? completedAt
     const durationSec = patch.durationSec ?? existing?.durationSec ?? Math.max(0, Math.round((new Date(completedAt) - new Date(startedAt)) / 1000))
-    return { ...mergeSession(existing, date, dayId, patch), status: 'completed', startedAt, completedAt, durationSec }
+    const next = { ...mergeSession(existing, date, dayId, patch), status: 'completed', startedAt, completedAt, durationSec, durationSource: patch.durationSource ?? existing?.durationSource ?? 'measured' }
+    return existing && sameContent(existing, next) ? null : next
   })
 }
 
 export async function getWorkoutHistory({ includeStarted = false } = {}) {
-  const [sessions, sets] = await Promise.all([repository.list('sessions'), repository.list('sets')])
-  const completedSets = sets.filter((item) => item.completed)
+  const [sessions, sets] = await Promise.all([repository.list('sessions', { includeDeleted: true }), repository.list('sets')])
+  const deletedParents = new Set(sessions.filter((s) => s.deletedAt).map((s) => s.id))
+  const completedSets = sets.filter((item) => item.completed && !deletedParents.has(item.sessionId ?? sessionId(item.date, item.dayId)))
   const setCounts = new Map()
   completedSets.forEach((item) => {
     const key = sessionId(item.date, item.dayId)
@@ -70,7 +84,7 @@ export async function getWorkoutHistory({ includeStarted = false } = {}) {
 
   const sessionMap = new Map()
   sessions.forEach((session) => {
-    if (includeStarted || session.status === 'completed') {
+    if (!session.deletedAt && (includeStarted || session.status === 'completed')) {
       sessionMap.set(session.id, { ...session, setCount: setCounts.get(session.id) ?? 0 })
     }
   })
@@ -94,17 +108,18 @@ export async function getWorkoutHistory({ includeStarted = false } = {}) {
 }
 
 export async function getAllCompletedSets() {
-  const sets = await repository.list('sets')
-  return sets.filter((item) => item.completed)
+  const [sets, sessions] = await Promise.all([repository.list('sets'), repository.list('sessions', { includeDeleted: true })])
+  const deletedParents = new Set(sessions.filter((s) => s.deletedAt).map((s) => s.id))
+  return sets.filter((item) => item.completed && !deletedParents.has(item.sessionId ?? sessionId(item.date, item.dayId)))
 }
 
 export async function exportWorkoutData() {
-  const { sessions, sets, conflicts } = await repository.snapshot()
-  return { format: 'yongho-performance-backup', version: 2, exportedAt: new Date().toISOString(), sessions, sets, conflicts }
+  const { sessions, sets, reports, conflicts, meta } = await repository.snapshot()
+  return { format: 'yongho-performance-backup', version: 3, exportedAt: new Date().toISOString(), sessions, sets, reports, conflicts, reportContexts: meta.filter((m) => m.key.startsWith('report-context:')).map((m) => m.context) }
 }
 
 export async function importWorkoutData(data) {
-  if (data?.format !== 'yongho-performance-backup' || ![1, 2].includes(data.version ?? 1) || !Array.isArray(data.sessions) || !Array.isArray(data.sets) || (data.conflicts && !Array.isArray(data.conflicts))) {
+  if (data?.format !== 'yongho-performance-backup' || ![1, 2, 3].includes(data.version ?? 1) || !Array.isArray(data.sessions) || !Array.isArray(data.sets) || (data.conflicts && !Array.isArray(data.conflicts)) || (data.reports && !Array.isArray(data.reports)) || (data.reportContexts && !Array.isArray(data.reportContexts))) {
     throw new Error('YONGHO PERFORMANCE 백업 파일이 아닙니다.')
   }
   return repository.importRecords(data)

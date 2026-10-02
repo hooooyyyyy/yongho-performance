@@ -1,4 +1,4 @@
-import { recordKey, sameContent, normalizeRecord } from '../repositories/localWorkoutRepository.js'
+import { recordKey, sameContent, normalizeRecord, recordKinds } from '../repositories/localWorkoutRepository.js'
 
 const baselineKey = (accountId, key) => `sync:${accountId}:${key}`
 const ownerKey = 'sync:owner'
@@ -19,7 +19,7 @@ export function createSyncEngine({ local, remote }) {
       const accountId = await account()
       const incoming = await remote.list(accountId)
       for (const record of incoming) {
-        if (!['sessions', 'sets'].includes(record.kind) || record.payload?.id !== record.id || !Number.isInteger(record.version) || record.version < 1) throw new Error('서버 기록 형식이 올바르지 않습니다.')
+        if (!recordKinds.includes(record.kind) || record.payload?.id !== record.id || !Number.isInteger(record.version) || record.version < 1) throw new Error('서버 기록 형식이 올바르지 않습니다.')
         normalizeRecord(record.kind, record.payload)
       }
       const snapshot = await local.snapshot()
@@ -27,14 +27,14 @@ export function createSyncEngine({ local, remote }) {
       const bases = new Map(snapshot.meta.map((item) => [item.key, item.version]))
       const cloud = new Map(incoming.map((item) => [recordKey(item.kind, item.id), item]))
       const actions = []
-      for (const kind of ['sessions', 'sets']) {
+      for (const kind of recordKinds) {
         for (const row of snapshot[kind]) {
           const key = recordKey(kind, row.id)
           const other = cloud.get(key)
           const baseVersion = bases.get(baselineKey(accountId, key)) ?? 0
           let type
           if (other && sameContent(row, other.payload)) type = 'duplicate'
-          else if (other && queued.has(key) && other.version !== baseVersion) type = 'conflict'
+          else if (other && (kind === 'reports' || queued.has(key)) && other.version !== baseVersion) type = 'conflict'
           else if (queued.has(key) || !other) type = 'upload'
           else type = 'download'
           actions.push({ type, kind, id: row.id, local: row, incoming: other ?? null, expectedVersion: baseVersion })
@@ -48,7 +48,7 @@ export function createSyncEngine({ local, remote }) {
     async confirm(plan) {
       const accountId = await account()
       if (plan.accountId !== accountId) throw new Error('계정이 변경됐습니다. 병합 내용을 다시 확인해주세요.')
-      await local.transaction(['sessions', 'sets', 'meta'], 'readwrite', async (tx) => {
+      await local.transaction([...recordKinds, 'meta'], 'readwrite', async (tx) => {
         const owner = await tx.objectStore('meta').get(ownerKey)
         if (owner && owner.accountId !== accountId) throw new Error('기기에 연결된 계정이 변경됐습니다.')
         for (const action of plan.actions) {

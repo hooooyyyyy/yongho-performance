@@ -11,7 +11,7 @@ function repRange(value = '') {
 }
 
 function workSets(sets) {
-  return sets.filter((set) => set.completed && set.setType !== 'warmup' && Number.isFinite(set.weight) && Number.isFinite(set.reps))
+  return sets.filter((set) => set.completed && !set.deletedAt && (set.setType ?? 'work') === 'work')
 }
 
 function sessionMetrics(sets) {
@@ -23,9 +23,9 @@ function sessionMetrics(sets) {
 
   return {
     setCount: working.length,
-    volume: Math.round(working.reduce((sum, set) => sum + set.weight * set.reps, 0)),
-    maxWeight: working.reduce((max, set) => Math.max(max, set.weight), 0),
-    totalReps: working.reduce((sum, set) => sum + set.reps, 0),
+    volume: Math.round(working.reduce((sum, set) => sum + (Number.isFinite(set.weight) && Number.isFinite(set.reps) ? set.weight * set.reps : 0), 0)),
+    maxWeight: working.reduce((max, set) => Math.max(max, Number.isFinite(set.weight) ? set.weight : 0), 0),
+    totalReps: working.reduce((sum, set) => sum + (Number.isFinite(set.reps) ? set.reps : 0), 0),
     estimated1rm: estimatedMaxes.length ? Math.max(...estimatedMaxes) : 0,
     averageRir: rirValues.length ? rirValues.reduce((sum, value) => sum + value, 0) / rirValues.length : null,
     rirCoverage: working.length ? rirValues.length / working.length : 0,
@@ -51,10 +51,14 @@ function makeDirection({ latest, previous, config, note }) {
 
   if (/(통증|불편)/.test(note)) return { tone: 'caution', label: '불편감 우선 확인', detail: '중량보다 통증 없는 가동범위와 동작 선택을 먼저 확인해.' }
   if (qualityConcern) return { tone: 'quality', label: '현재 중량 · 수행 품질 우선', detail: '메모에 자세나 자극의 불확실성이 있어. 증량보다 같은 조건에서 더 안정적으로 반복하는 게 우선이야.' }
+  if (config?.rir === '최대 속도') return { tone: 'quality', label: '폭발력·착지 품질 확인', detail: '점프는 RIR보다 높이·속도·착지의 일관성을 기록해.' }
+  if (latest.sets.some((set) => !Number.isFinite(set.reps))) return { tone: 'hold', label: '반복수 기록부터 확인', detail: '세트는 보존돼 있지만 반복수가 비어 있어. 성장·정체나 증량을 판단할 근거가 부족해.' }
+  if (/(가동범위|이완|깊이|깊게|속도.*변|폼.*변)/.test(note)) return { tone: 'quality', label: '같은 수행 조건에서 다시 비교', detail: '가동범위나 수행 방식 변화가 기록돼 있어. 숫자 변화만으로 성장·정체를 단정하지 말고 같은 조건의 기록을 더 쌓아.' }
+  if (latest.metrics.rirCoverage < 0.5) return { tone: 'hold', label: 'RIR 기록 보완', detail: '여유 반복 기록이 부족해. 증량 판단 전에 마지막 본세트의 RIR을 남겨줘.' }
   if (allAtTop && latest.metrics.averageRir != null && latest.metrics.averageRir >= 1.5) return { tone: 'up', label: '최소 단위 증량 후보', detail: '목표 반복 상단을 달성했고 1~2회 이상 여유가 남았어. 다음 세션에서 가장 작은 단위 증량을 검토해.' }
   if (latest.metrics.averageRir != null && latest.metrics.averageRir <= 1) return { tone: 'hold', label: '현재 중량 유지', detail: '한계에 가까운 세트가 있어. 같은 중량에서 반복수와 자세를 안정시키는 편이 좋아.' }
   if (previous && latest.metrics.estimated1rm > previous.metrics.estimated1rm * 1.02) return { tone: 'up', label: '성장 흐름 유지', detail: '중량과 반복수를 함께 본 추정 수행력이 이전 기록보다 좋아졌어.' }
-  if (previous && latest.metrics.volume > previous.metrics.volume * 1.05) return { tone: 'up', label: '총 반복량 증가', detail: '같은 운동의 유효 훈련량이 이전 기록보다 늘었어. 급하게 증량하지 말고 한 번 더 확인해.' }
+  if (previous && latest.metrics.volume > previous.metrics.volume * 1.05) return { tone: 'up', label: '총 반복량 증가', detail: '기록된 같은 운동의 중량×반복수 합계이 이전 기록보다 늘었어. 급하게 증량하지 말고 한 번 더 확인해.' }
   return { tone: 'hold', label: '현재 중량 · 총 반복 +1', detail: '다음 세션은 같은 중량에서 깔끔한 반복을 한 개 더 쌓는 방향이 무난해.' }
 }
 
@@ -62,7 +66,7 @@ export function buildExerciseInsights(sessions, sets, routine, exerciseLibrary) 
   const sessionMap = new Map(sessions.map((session) => [session.id, session]))
   const grouped = new Map()
 
-  workSets(sets).forEach((set) => {
+  workSets(sets).filter((set) => sessionMap.get(`${set.date}:${set.dayId}`)?.status !== 'started').forEach((set) => {
     const key = `${set.date}:${set.dayId}:${set.exerciseId}`
     if (!grouped.has(key)) grouped.set(key, { date: set.date, dayId: set.dayId, exerciseId: set.exerciseId, sets: [] })
     grouped.get(key).sets.push(set)
@@ -125,7 +129,7 @@ export function buildTrainingSummary(sessions, sets, routine, exerciseLibrary, r
   return {
     sessionCount: rangedSessions.length,
     workingSetCount: working.length,
-    volume: Math.round(working.reduce((sum, set) => sum + set.weight * set.reps, 0)),
+    volume: Math.round(working.reduce((sum, set) => sum + (Number.isFinite(set.weight) && Number.isFinite(set.reps) ? set.weight * set.reps : 0), 0)),
     averageDurationSec: durations.length ? Math.round(durations.reduce((sum, session) => sum + session.durationSec, 0) / durations.length) : 0,
     rirCoverage: working.length ? rirValues.length / working.length : 0,
     durationByDay,

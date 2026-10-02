@@ -18,6 +18,12 @@ begin
   if (response ->> 'ok')::boolean or response #>> '{record,payload,revision}' <> 'r2' then raise exception 'stale version overwrote data'; end if;
   if (select count(*) from public.workout_records) <> 1 then raise exception 'owner read failed'; end if;
   if (select count(*) from public.workout_analyses) <> 1 then raise exception 'owner analysis read failed'; end if;
+  response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'reports', 'report-sample', '{"id":"report-sample","revision":"report-r1"}', 0);
+  if not (response ->> 'ok')::boolean then raise exception 'report create failed'; end if;
+  response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'reports', 'report-sample', '{"id":"report-sample","revision":"report-r1"}', 0);
+  if not (response ->> 'ok')::boolean then raise exception 'report retry failed'; end if;
+  response := public.write_workout_record('00000000-0000-4000-8000-000000000001', 'reports', 'report-sample', '{"id":"report-sample","revision":"report-r2"}', 1);
+  if (response ->> 'ok')::boolean then raise exception 'immutable report overwritten'; end if;
   begin
     update public.workout_records set payload = '{"id":"sample","revision":"bypass"}';
     raise exception 'direct update must be denied';

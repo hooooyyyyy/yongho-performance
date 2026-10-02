@@ -53,7 +53,7 @@ test('tombstones stay out of day logs, attendance and completed sets, and surviv
   assert.equal((await storage.getAllCompletedSets()).length, 0)
   assert.equal((await storage.getWorkoutHistory())[0].setCount, 0)
   const backup = await storage.exportWorkoutData()
-  assert.equal(backup.version, 2); assert.ok(backup.sets[0].deletedAt)
+  assert.equal(backup.version, 3); assert.ok(backup.sets[0].deletedAt)
   await storage.saveSet(row)
   assert.equal((await storage.getDayLog(date, dayId))[0].reps, null)
 })
@@ -99,4 +99,12 @@ test('deleted defaults stay deleted after reopen and arbitrary legacy IDs remain
   await storage.saveSet({ ...entry, weight: 30 })
   assert.equal((await storage.getDayLog(entry.date, dayId)).length, 1)
   assert.equal((await storage.getDayLog(entry.date, dayId))[0].id, entry.id)
+})
+
+test('deleted session does not become orphan legacy attendance or analysis input', async () => {
+  const entry = { ...row, date: '2030-03-01' }
+  await storage.startWorkoutSession(entry.date, dayId); await storage.saveSet(entry); await storage.completeWorkoutSession(entry.date, dayId)
+  await storage.repository.mutate('sessions', sessionId(entry.date, dayId), (s) => ({ ...s, deletedAt: '2030-03-02T00:00:00Z' }))
+  assert.ok(!(await storage.getWorkoutHistory()).some((s) => s.date === entry.date))
+  assert.ok(!(await storage.getAllCompletedSets()).some((s) => s.date === entry.date))
 })

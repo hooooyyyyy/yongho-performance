@@ -1,8 +1,10 @@
+import { validateReport } from '../reportSchema.js'
 import { openDB } from 'idb'
 
 export const DB_NAME = 'yongho-performance'
-export const DB_VERSION = 4
-const kinds = ['sessions', 'sets']
+export const DB_VERSION = 5
+export const recordKinds = ['sessions', 'sets', 'reports']
+const kinds = recordKinds
 export const recordKey = (kind, id) => `${kind}:${id}`
 export const sessionId = (date, dayId) => `${date}:${dayId}`
 export const setId = (row) => row.id ?? `${row.date}:${row.dayId}:${row.exerciseId}:${row.setIndex}`
@@ -10,6 +12,14 @@ const stamp = () => new Date().toISOString()
 const revision = () => crypto.randomUUID()
 
 export function normalizeRecord(kind, row) {
+  if (!row || !kinds.includes(kind)) throw new Error('기록 형식이 올바르지 않습니다.')
+  if (kind === 'reports') {
+    if (typeof row.id !== 'string' || !row.id || !/^\d{4}-\d{2}-\d{2}$/.test(row.weekStart) || !/^\d{4}-\d{2}-\d{2}$/.test(row.weekEnd) || !Number.isInteger(row.version) || row.version < 1 || !row.sourceSnapshot || !Array.isArray(row.sourceSnapshot.sessions) || !Array.isArray(row.sourceSnapshot.sets) || typeof row.requestId !== 'string' || !row.requestId || !row.report || !['local-rules', 'gpt'].includes(row.analysisType)) throw new Error('리포트 형식이 올바르지 않습니다.')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(row.sourceFrom) || !Array.isArray(row.sourceRevisions) || !row.sourceRevisions.every((r) => typeof r === 'string') || !Number.isFinite(Date.parse(row.generatedAt)) || !Number.isFinite(Date.parse(row.dataCutoffAt)) || !['in-progress', 'closed'].includes(row.reportStatus)) throw new Error('리포트 근거와 시점 형식을 확인해주세요.')
+    validateReport(row.report)
+    const createdAt = row.createdAt ?? row.generatedAt ?? stamp()
+    return { ...row, createdAt, updatedAt: row.updatedAt ?? createdAt, deletedAt: row.deletedAt ?? null, revision: row.revision ?? revision() }
+  }
   const id = kind === 'sessions' ? sessionId(row.date, row.dayId) : setId(row)
   if (!row || !/^\d{4}-\d{2}-\d{2}$/.test(row.date) || typeof row.dayId !== 'string' || !row.dayId || typeof id !== 'string' || !id) throw new Error('기록 형식이 올바르지 않습니다.')
   if (kind === 'sessions' && row.id && row.id !== id) throw new Error('세션 ID가 날짜·루틴과 일치하지 않습니다.')
@@ -36,7 +46,7 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
         db.createObjectStore('outbox', { keyPath: 'key' })
         db.createObjectStore('conflicts', { keyPath: 'id' })
         // Add metadata in the same upgrade transaction. No records or indexes are removed.
-        for (const kind of kinds) {
+        for (const kind of ['sessions', 'sets']) {
           const request = tx.objectStore(kind).openCursor()
           request.then(async function migrate(cursor) {
             if (!cursor) return
@@ -46,6 +56,11 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
             return cursor.continue().then(migrate)
           }).catch(() => tx.abort())
         }
+      }
+      if (oldVersion < 5) {
+        const reports = db.createObjectStore('reports', { keyPath: 'id' })
+        reports.createIndex('by-week', 'weekStart')
+        reports.createIndex('by-request', 'requestId')
       }
     },
     blocked() { globalThis.dispatchEvent?.(new Event('yp:storage-blocked')) },
@@ -75,6 +90,7 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
         const existing = await tx.objectStore(kind).get(id)
         const next = change(existing)
         if (!next) return existing
+        if (kind === 'reports' && existing && !sameContent(existing, next)) throw new Error('저장된 리포트는 수정할 수 없습니다. 새 버전을 저장해주세요.')
         const now = stamp()
         const row = normalizeRecord(kind, { ...next, id, createdAt: existing?.createdAt ?? now, updatedAt: now, revision: revision() })
         await tx.objectStore(kind).put(row)
@@ -84,15 +100,15 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
     },
     async snapshot() {
       return transaction([...kinds, 'outbox', 'meta', 'conflicts'], 'readonly', async (tx) => {
-        const [sessions, sets, outbox, meta, conflicts] = await Promise.all([...kinds, 'outbox', 'meta', 'conflicts'].map((kind) => tx.objectStore(kind).getAll()))
-        return { sessions, sets, outbox, meta, conflicts }
+        const [sessions, sets, reports, outbox, meta, conflicts] = await Promise.all([...kinds, 'outbox', 'meta', 'conflicts'].map((kind) => tx.objectStore(kind).getAll()))
+        return { sessions, sets, reports, outbox, meta, conflicts }
       })
     },
     async importRecords(data) {
-      const rows = kinds.flatMap((kind) => data[kind].map((row) => ({ kind, row: normalizeRecord(kind, row) })))
+      const rows = kinds.flatMap((kind) => (data[kind] ?? []).map((row) => ({ kind, row: normalizeRecord(kind, row) })))
       const keys = rows.map(({ kind, row }) => recordKey(kind, row.id))
       if (new Set(keys).size !== keys.length) throw new Error('백업에 중복된 ID가 있습니다.')
-      return transaction([...kinds, 'outbox', 'conflicts'], 'readwrite', async (tx) => {
+      return transaction([...kinds, 'outbox', 'conflicts', 'meta'], 'readwrite', async (tx) => {
         let imported = 0; let duplicates = 0; let conflicts = 0
         for (const { kind, row } of rows) {
           const existing = await tx.objectStore(kind).get(row.id)
@@ -101,7 +117,7 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
             await tx.objectStore('conflicts').put({ id: revision(), source: 'backup', kind, recordId: row.id, local: existing, incoming: row, createdAt: stamp() })
             conflicts++; continue
           }
-          const saved = { ...row, revision: revision() }
+          const saved = row
           await tx.objectStore(kind).put(saved)
           await tx.objectStore('outbox').put({ key: recordKey(kind, row.id), kind, id: row.id, revision: saved.revision })
           imported++
@@ -110,6 +126,12 @@ export function createLocalWorkoutRepository({ name = DB_NAME } = {}) {
           if (!conflict || typeof conflict.id !== 'string' || !kinds.includes(conflict.kind) || !conflict.local || !conflict.incoming) throw new Error('충돌 백업 형식이 올바르지 않습니다.')
           // Never overwrite an already preserved conflict.
           if (!await tx.objectStore('conflicts').get(conflict.id)) await tx.objectStore('conflicts').put(conflict)
+        }
+        for (const context of data.reportContexts ?? []) {
+          if (typeof context?.contextId !== 'string' || !context.contextId || !Array.isArray(context.sourceSnapshot?.sessions) || !Array.isArray(context.sourceSnapshot?.sets)) throw new Error('리포트 입력 백업 형식이 올바르지 않습니다.')
+          const key = `report-context:${context.contextId}`
+          const existing = await tx.objectStore('meta').get(key)
+          if (!existing) await tx.objectStore('meta').put({ key, context })
         }
         return { sessions: data.sessions.length, sets: data.sets.length, imported, duplicates, conflicts }
       })

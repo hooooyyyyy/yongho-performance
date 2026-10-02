@@ -1,6 +1,6 @@
 # 서버 측 AI 분석 인터페이스 v1
 
-이번 단계는 API 계약만 준비한다. 실제 함수 배포·AI 호출·AI 자동 분석 UI는 없다. 현재 리포트의 분석은 계속 로컬 규칙 기반이다.
+이번 단계는 API 계약만 준비한다. 실제 함수 배포·AI 호출·AI 자동 분석 UI는 없다. 현재 자동 집계는 로컬 규칙 기반이다. 사용자가 GPT에서 분석한 JSON 리포트는 별도로 가져와 보관할 수 있다. 우선 경로는 records-and-gpt.md의 GPT 원격 도구 연결이며, 이 문서의 앱 자체 API 분석은 선택적인 후속 경로다.
 
 `src/lib/analysisContract.js`는 주입된 인증 Supabase 클라이언트로 `analyze-workouts` 함수에 요청하며, JSON 출력 스키마를 제공한다. routine.json/기준 루틴/운동 기록을 수정하는 메서드는 없다.
 
