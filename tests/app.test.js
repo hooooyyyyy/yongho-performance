@@ -16,7 +16,10 @@ test('completion flushes unblurred inputs, keeps original date and opens daily c
   // JSDOM does not implement browser BroadcastChannel; a Node channel keeps the test alive.
   globalThis.BroadcastChannel = undefined
   window.scrollTo = () => {}
-  const { render, fireEvent, screen, waitFor, cleanup } = await import('@testing-library/react')
+  const { render, fireEvent, screen, waitFor, cleanup, configure } = await import('@testing-library/react')
+  // CI runs JSX compilation and database tests concurrently; keep assertions intact
+  // while allowing the asynchronous finish transaction and screen render to settle.
+  configure({ asyncUtilTimeout: 5000 })
   const server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true, entries: [] }, plugins: [react()], server: { middlewareMode: true, hmr: false }, appType: 'custom' })
   const RealDate = globalThis.Date
   try {
