@@ -1,6 +1,6 @@
 import { countTargets } from '../lib/trainingDistribution.js'
 import { useEffect, useRef, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Download, FileText, Moon, Sparkles, Upload } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Cloud, Download, FileText, Moon, Sparkles, Upload } from 'lucide-react'
 import routine from '../data/routine.json'
 import exerciseLibrary from '../data/exercises.json'
 import { exportWorkoutData, importWorkoutData, reportArchive, repository } from '../lib/storage.js'
@@ -18,7 +18,7 @@ function download(data, name) {
   const link = document.createElement('a'); link.href = url; link.download = name; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export default function RecordsScreen({ history, completedSets, focusDate, focusSessionId, onDataChanged, onResume }) {
+export default function RecordsScreen({ history, completedSets, focusDate, focusSessionId, onDataChanged, onResume, onOpenCloud }) {
   const today = localDateKey()
   const [tab, setTab] = useState('calendar')
   const [selectedDate, setSelectedDate] = useState(focusDate ?? today)
@@ -47,6 +47,7 @@ export default function RecordsScreen({ history, completedSets, focusDate, focus
 
   return <>
     <section className="page-heading compact"><p>TRAINING ARCHIVE</p><h1>기록과 회고</h1><span>그날의 경험부터 다음 주의 방향까지.</span></section>
+    {onOpenCloud && <button className="records-account-button" onClick={onOpenCloud}><Cloud size={20} />계정 연결 · 동기화</button>}
     <div className="records-tabs" role="tablist" aria-label="기록 보기">{[['calendar', '캘린더'], ['weekly', '주간 리포트']].map(([id, name]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{name}</button>)}</div>
     {message && <p className="record-message" role="status">{message}</p>}
     {tab === 'calendar' ? <>
