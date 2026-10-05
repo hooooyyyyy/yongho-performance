@@ -1,4 +1,5 @@
 import { createReportArchive } from './reportArchive.js'
+import { coachReviewIsStale } from './workoutImport.js'
 import { createLocalWorkoutRepository, sessionId, setId, sameContent } from './repositories/localWorkoutRepository.js'
 
 export const repository = createLocalWorkoutRepository()
@@ -31,6 +32,15 @@ export async function getPreviousExerciseLog(exerciseId, beforeDate) {
 
 export async function getWorkoutSession(date, dayId) {
   return repository.get('sessions', sessionId(date, dayId))
+}
+
+export async function getPreviousExerciseReview(exerciseId, beforeDate) {
+  const [sessions, sets] = await Promise.all([repository.list('sessions'), repository.list('sets')])
+  const session = sessions.filter((s) => s.date < beforeDate && s.status === 'completed' && s.coachReview?.nextActions?.some((a) => a.exerciseId === exerciseId)).sort((a, b) => b.date.localeCompare(a.date))[0]
+  if (!session) return null
+  const sourceSets = sets.filter((s) => s.completed && (s.sessionId ?? sessionId(s.date, s.dayId)) === session.id)
+  const review = session.coachReview
+  return { date: session.date, action: review.nextActions.find((a) => a.exerciseId === exerciseId), stale: coachReviewIsStale(session, sourceSets) }
 }
 
 export async function startWorkoutSession(date, dayOrId) {

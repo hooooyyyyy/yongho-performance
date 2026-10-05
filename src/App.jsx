@@ -42,6 +42,7 @@ import {
   getAllCompletedSets,
   getDayLog,
   getPreviousExerciseLog,
+  getPreviousExerciseReview,
   getWorkoutHistory,
   importWorkoutData,
   saveSet,
@@ -352,6 +353,7 @@ function WorkoutScreen({ day: baselineDay, dateKey, onBack, onFinish, onStartTim
   const [date] = useState(() => dateKey ?? localDateKey())
   const [logs, setLogs] = useState([])
   const [previous, setPrevious] = useState({})
+  const [previousReview, setPreviousReview] = useState({})
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(Date.now())
@@ -370,6 +372,9 @@ function WorkoutScreen({ day: baselineDay, dateKey, onBack, onFinish, onStartTim
     const [currentLogs, ...priorRows] = await Promise.all([getDayLog(date, day.id, { includeDeleted: true }), ...[...new Set(sessionDay.exercises.map((exercise) => exercise.id))].map((exerciseId) => getPreviousExerciseLog(exerciseId, date))])
     setLogs(currentLogs)
     setPrevious(Object.fromEntries([...new Set(sessionDay.exercises.map((exercise) => exercise.id))].map((exerciseId, index) => [exerciseId, priorRows[index]])))
+    const reviewIds = [...new Set(sessionDay.exercises.map((exercise) => exercise.id))]
+    const reviews = await Promise.all(reviewIds.map((id) => getPreviousExerciseReview(id, date)))
+    setPreviousReview(Object.fromEntries(reviewIds.map((id, index) => [id, reviews[index]])))
     setSession(currentSession)
     setLoading(false)
   }, [date, baselineDay])
@@ -426,7 +431,7 @@ function WorkoutScreen({ day: baselineDay, dateKey, onBack, onFinish, onStartTim
   return <div className="workout-shell"><header className="workout-header"><button className="icon-button" disabled={finishing} onClick={closeWorkout} aria-label="운동 화면 닫기"><ArrowLeft size={23} /></button><div><span>{day.sessionLabel} SESSION · {date.replaceAll('-', '.')}</span><h1>{day.name}</h1></div><strong>{formatClock(elapsedSec)}</strong></header><div className="workout-progress"><span style={{ width: `${Math.min(100, (completed / Math.max(1, day.exercises.reduce((sum, exercise) => sum + exercise.sets, 0))) * 100)}%` }} /></div>
     <main className="workout-main">{saveError && <p className="record-message" role="alert">{saveError}</p>}<fieldset className="workout-fields" disabled={finishing || loading}><section className="session-intro"><div><Clock3 size={18} /><span>진행 {formatDuration(elapsedSec)}</span></div><p>{day.focus}</p></section>
       <section className="session-rule"><Info size={17} /><p><strong>오늘 기록만 자유롭게 변경</strong>세트와 중량을 바꿔도 기준 루틴은 그대로 유지돼.</p></section>
-      {loading ? <div className="loading-card">기록을 불러오는 중…</div> : day.exercises.map((exercise, index) => <LogExerciseCard key={`${exercise.id}-${externalRevision}`} exercise={exercise} index={index} logs={logs.filter((item) => item.exerciseId === exercise.id)} previous={previous[exercise.id] ?? []} restValue={session?.restOverrides?.[exercise.id] ?? exercise.rest} exerciseNote={session?.exerciseNotes?.[exercise.id] ?? ''} onSave={handleSetSave} onDelete={handleDelete} onRestChange={updateRest} onNoteChange={updateExerciseNote} registerFlush={registerFlush} />)}
+      {loading ? <div className="loading-card">기록을 불러오는 중…</div> : day.exercises.map((exercise, index) => <LogExerciseCard key={`${exercise.id}-${externalRevision}`} exercise={exercise} index={index} logs={logs.filter((item) => item.exerciseId === exercise.id)} previous={previous[exercise.id] ?? []} previousReview={previousReview[exercise.id]} restValue={session?.restOverrides?.[exercise.id] ?? exercise.rest} exerciseNote={session?.exerciseNotes?.[exercise.id] ?? ''} onSave={handleSetSave} onDelete={handleDelete} onRestChange={updateRest} onNoteChange={updateExerciseNote} registerFlush={registerFlush} />)}
       {!loading && <QuickLogCard day={day} onImport={importQuickLog} onJournalOnly={async (text) => patchSession({ journal: [session?.journal, text].filter(Boolean).join('\n\n') })} />}
       {!loading && <SessionNotesCard key={`notes-${externalRevision}`} session={session} onSave={patchSession} registerFlush={registerFlush} />}
       </fieldset><button className="finish-button" disabled={completed === 0 || loading || finishing} onClick={finishWorkout}><Check size={20} /> {finishing ? '입력을 저장하는 중…' : session?.status === 'completed' ? '운동 기록 업데이트' : '운동 완료'} · {formatDuration(elapsedSec)}</button><p className="storage-note"><Info size={15} /> 완료하면 이 날짜의 캘린더 회고로 이동해. 주간 리포트는 원하는 때 따로 보관할 수 있어.</p>
@@ -434,7 +439,7 @@ function WorkoutScreen({ day: baselineDay, dateKey, onBack, onFinish, onStartTim
   </div>
 }
 
-function LogExerciseCard({ exercise, index, logs, previous, restValue, exerciseNote, onSave, onDelete, onRestChange, onNoteChange, registerFlush }) {
+function LogExerciseCard({ exercise, index, logs, previous, previousReview, restValue, exerciseNote, onSave, onDelete, onRestChange, onNoteChange, registerFlush }) {
   const detail = exerciseLibrary[exercise.id]
   const [tipsOpen, setTipsOpen] = useState(false)
   const [restOpen, setRestOpen] = useState(false)
@@ -456,6 +461,7 @@ function LogExerciseCard({ exercise, index, logs, previous, restValue, exerciseN
   return <article className="log-card"><div className="log-card-head"><span className="exercise-number">{String(index + 1).padStart(2, '0')}</span><div><h2>{detail.name}</h2><p>기준 {exercise.sets} × {exercise.reps} · RIR {exercise.rir}</p></div><button className="rest-chip" onClick={() => setRestOpen((value) => !value)}><Clock3 size={14} /> {formatClock(restSeconds)}</button></div>
     {restOpen && <div className="rest-editor"><span>이 운동의 오늘 휴식</span><button onClick={() => changeRest(restSeconds - 15)}><Minus size={16} /></button><strong>{formatClock(restSeconds)}</strong><button onClick={() => changeRest(restSeconds + 15)}><Plus size={16} /></button><small>완료 체크 시 자동 시작</small></div>}
     <div className="last-record"><History size={16} /><span><small>지난 기록</small>{previousText}</span></div><div className="live-cue"><Flame size={17} /><strong>{detail.shortCue}</strong></div>
+    {previousReview && <details className="previous-coach-note"><summary>지난 회고 · 이번에 확인할 것</summary><p>{previousReview.action.action}</p><p>확인: {previousReview.action.check}</p><small>{previousReview.date} GPT 회고{previousReview.stale ? " · 원본 수정 전 분석" : ""} · 제안이며 기준값은 그대로야.</small></details>}
     <div className="set-list"><div className="set-list-head"><span>오늘 실제 수행</span><small>각 세트는 독립적으로 저장돼</small></div>{rows.map((row, displayIndex) => <div className={`set-row-v2 ${row.completed ? 'completed' : ''}`} key={row.setIndex}><div className="set-row-top"><strong>{displayIndex + 1}</strong><select value={row.setType} aria-label={`${detail.name} ${displayIndex + 1}세트 유형`} onChange={(event) => persistRow(row, { setType: event.target.value })}>{Object.entries(setTypeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><button className="delete-set" onClick={() => removeRow(row)} aria-label="세트 삭제"><Trash2 size={16} /></button></div><div className="set-fields"><label><span>KG</span><input inputMode="decimal" type="number" min="0" step="0.5" value={row.weight} onChange={(event) => updateRow(row.setIndex, { weight: event.target.value, weightLabel: '' })} onBlur={() => onSave(exercise, row, false, restSeconds).catch(() => {})} placeholder={row.weightLabel || '–'} /></label><label><span>REPS</span><input inputMode="numeric" type="number" min="0" step="1" value={row.reps} onChange={(event) => updateRow(row.setIndex, { reps: event.target.value })} onBlur={() => onSave(exercise, row, false, restSeconds).catch(() => {})} placeholder="–" /></label><label><span>RIR</span><input inputMode="decimal" value={row.rir} onChange={(event) => updateRow(row.setIndex, { rir: event.target.value })} onBlur={() => onSave(exercise, row, false, restSeconds).catch(() => {})} placeholder="–" /></label><button className="complete-set" onClick={() => persistRow(row, { completed: !row.completed }, !row.completed)} aria-label={`${detail.name} ${displayIndex + 1}세트 ${row.completed ? '완료 취소' : '완료'}`}>{row.completed && <Check size={20} strokeWidth={3} />}</button></div></div>)}</div>
     <button className="add-set" onClick={addRow}><Plus size={17} /> 오늘 세트 추가</button>
     <label className="exercise-note"><span>이 운동의 느낌</span><textarea value={note} onChange={(event) => setNote(event.target.value)} onBlur={() => onNoteChange(exercise.id, note).catch(() => {})} placeholder="자극 위치, 자세, 통증, 다음에 바꿀 점…" /></label>
