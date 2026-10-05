@@ -464,3 +464,18 @@ button:disabled { opacity: .5; cursor: wait; }
 .cloud-record pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .72rem; line-height: 1.55; max-height: 340px; overflow-y: auto; }
 .cloud-conflict { padding: 12px; border: 1px solid rgba(255,192,91,.35); border-radius: 14px; margin: 14px 0; }
 .cloud-conflict h3 { font-size: .95rem; }
+
+.workout-import h2 { font-size: 18px; margin-top: 0; }
+.workout-import-preview h3, .coach-review h3 { line-height: 1.5; }
+.coach-review { margin: 22px 0; padding-top: 18px; border-top: 1px solid var(--line); }
+.coach-action { margin: 12px 0; padding: 16px; border-radius: 18px; background: var(--surface); }
+.coach-action > span { font-size: 13px; color: var(--blue); }
+.coach-action p { line-height: 1.65; white-space: pre-wrap; }
+.coach-action button { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--text); text-align: left; line-height: 1.6; }
+.coach-action button[aria-pressed='true'] { border-color: #5bb8ff; color: #5bb8ff; }
+.coach-action details { margin-top: 12px; color: var(--muted); font-size: 13px; }
+
+.previous-coach-note { padding: 14px; margin: 12px 0; background: rgba(91,184,255,.07); border-radius: 14px; color: var(--blue-soft); }
+.previous-coach-note summary { font-weight: 700; cursor: pointer; }
+.previous-coach-note p { font-size: 14px; line-height: 1.6; }
+.previous-coach-note small { color: var(--muted); }

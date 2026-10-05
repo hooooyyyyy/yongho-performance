@@ -6,6 +6,8 @@ import exerciseLibrary from '../data/exercises.json'
 import { exportWorkoutData, importWorkoutData, reportArchive, repository } from '../lib/storage.js'
 import { addDays, inRange, localDateKey, localWeeklyReport, summarizeWeek, weekRange } from '../lib/reportArchive.js'
 import { buildExerciseInsights } from '../lib/insights.js'
+import WorkoutImportPanel from './WorkoutImportPanel.jsx'
+import { coachReviewIsStale } from '../lib/workoutImport.js'
 
 const labels = { work: '본세트', warmup: '웜업', drop: '드롭', test: '테스트' }
 const weekdays = ['월', '화', '수', '목', '금', '토', '일']
@@ -30,11 +32,12 @@ export default function RecordsScreen({ history, completedSets, focusDate, focus
   const [message, setMessage] = useState('')
   const backupRef = useRef(null)
   const reportRef = useRef(null)
+  const lastFocus = useRef({ date: focusDate, id: focusSessionId })
   const [summary, setSummary] = useState(null)
   const [distribution, setDistribution] = useState([])
   const refresh = async () => { setReports(await reportArchive.list()); const snapshot = await repository.snapshot(); setSummary(summarizeWeek(snapshot, week)); setDistribution(Array.from({ length: 4 }, (_, i) => { const start = addDays(week.start, -7 * i); return { start, targets: countTargets(summarizeWeek(snapshot, { start, end: addDays(start, 6) }).sets) } })) }
   useEffect(() => { refresh().catch((e) => setMessage(e.message)) }, [history, completedSets, week])
-  useEffect(() => { if (focusDate) { setSelectedDate(focusDate); setMonth(focusDate.slice(0, 7)); setOpenId(focusSessionId); setTab('calendar') } }, [focusDate, focusSessionId])
+  useEffect(() => { if (focusDate && (lastFocus.current.date !== focusDate || lastFocus.current.id !== focusSessionId)) { setSelectedDate(focusDate); setMonth(focusDate.slice(0, 7)); setOpenId(focusSessionId); setTab('calendar') } lastFocus.current = { date: focusDate, id: focusSessionId } }, [focusDate, focusSessionId])
   const run = async (work) => { if (busy) return; setBusy(true); setMessage(''); try { await work() } catch (e) { setMessage(`처리하지 못했어: ${e.message}`) } finally { setBusy(false) } }
   const selected = history.filter((s) => s.date === selectedDate)
   const first = `${month}-01`
@@ -48,6 +51,7 @@ export default function RecordsScreen({ history, completedSets, focusDate, focus
   return <>
     <section className="page-heading compact"><p>TRAINING ARCHIVE</p><h1>기록과 회고</h1><span>그날의 경험부터 다음 주의 방향까지.</span></section>
     {onOpenCloud && <button className="records-account-button" onClick={onOpenCloud}><Cloud size={20} />계정 연결 · 동기화</button>}
+    <WorkoutImportPanel onDataChanged={onDataChanged} />
     <div className="records-tabs" role="tablist" aria-label="기록 보기">{[['calendar', '캘린더'], ['weekly', '주간 리포트']].map(([id, name]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{name}</button>)}</div>
     {message && <p className="record-message" role="status">{message}</p>}
     {tab === 'calendar' ? <>
@@ -80,10 +84,32 @@ export function DailyReflection({ session, sets, onResume }) {
     <div className="detail-note"><strong>오늘의 회고 · 직접 기록</strong><p>{condition.strategy || condition.note || (groups.length ? `${groups.length}개 운동 · 완료 ${sets.length}세트. 아래에서 운동별 느낌을 확인해.` : '아직 세트 기록이 없어. 일지를 먼저 남겨도 돼.')}</p>{condition.strategy && condition.note && <p>{condition.note}</p>}</div>
     <div className="detail-sets">{groups.map((id) => { const rows = sets.filter((s) => s.exerciseId === id).sort((a, b) => a.setIndex - b.setIndex); return <div key={id}><strong>{exerciseLibrary[id]?.name ?? id}</strong><small>본세트 {rows.filter((s) => (s.setType ?? 'work') === 'work').length} · 총 {rows.length}세트</small>{rows.map((s) => <p key={s.id}><i>{labels[s.setType] ?? '본세트'}</i><span>{s.weightLabel || (s.weight == null ? '중량 미기록' : `${s.weight}kg`)} × {s.reps ?? '반복수 미기록'}{String(s.rir ?? '').trim() && ` · RIR ${s.rir}`}</span></p>)}{session.exerciseNotes?.[id] && <div className="exercise-reflection-note">{session.exerciseNotes[id]}</div>}</div> })}</div>
     {session.journal && <details className="raw-journal"><summary>내가 남긴 원문 일지</summary><p>{session.journal}</p></details>}
+    {session.coachReview && <CoachReview session={session} sets={sets} />}
     {session.journalEntries?.length > 1 && <details className="raw-journal"><summary>원문 수정 이력 · {session.journalEntries.length}개</summary>{session.journalEntries.map((entry) => <div key={entry.id}><small>{entry.createdAt ? new Date(entry.createdAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '기존 기록'} · {entry.source}</small><p>{entry.text || '(빈 일지로 수정)'}</p></div>)}</details>}
     {session.aiAnalysis && <details className="raw-journal"><summary>별도로 저장된 분석</summary><p>{typeof session.aiAnalysis === 'string' ? session.aiAnalysis : JSON.stringify(session.aiAnalysis, null, 2)}</p><small>직접 기록과 구분해 확인해.</small></details>}
     {onResume && <button className="text-button" onClick={onResume}>{complete(session) ? '이날 기록 수정' : '이날 운동 이어서 기록'}</button>}
   </div>
+}
+function CoachReview({ session, sets }) {
+  const review = session.coachReview
+  const [checks, setChecks] = useState(session.coachChecks ?? {})
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { setChecks(session.coachChecks ?? {}) }, [session.revision])
+  const stale = coachReviewIsStale(session, sets)
+  const toggle = async (index) => {
+    if (busy) return
+    setBusy(true); setError('')
+    try {
+      const result = await repository.mutate('sessions', session.id, (current) => {
+        if (!current || current.deletedAt || current.coachReview?.generatedAt !== review.generatedAt) throw new Error('회고가 바뀌었어. 기록 화면을 다시 열어줘.')
+        return { ...current, coachChecks: { ...current.coachChecks, [index]: !current.coachChecks?.[index] } }
+      })
+      setChecks(result.coachChecks)
+      window.dispatchEvent(new CustomEvent('yp:log-updated'))
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+  return <section className="coach-review"><p className="archive-caption">GPT 대화에서 정리한 회고 · 실제 기록과 구분</p><h3>{review.headline}</h3>{stale && <p className="stale-report">회고 이후 운동기록이 수정됐어. 아래 분석은 가져온 당시 기록 기준이야.</p>}<ReportLines title="이번 운동에서 관찰한 점" rows={review.observations} /><strong>다음 운동에서 확인할 것</strong>{review.nextActions.map((item, i) => <div className="coach-action" key={i}><span>{exerciseLibrary[item.exerciseId]?.name ?? '전체 운동'}</span><p>{item.action}</p><button disabled={busy} aria-pressed={!!checks[i]} onClick={() => toggle(i)}>{checks[i] ? '✓ 확인했음' : '○ 확인할 항목'} · {item.check}</button><details><summary>판단 근거</summary><p>{item.basis}</p></details></div>)}<ReportLines title="아직 판단할 수 없는 점" rows={review.uncertainties} /><p className="archive-caption">확신도: {{ low: '낮음', medium: '보통', high: '높음' }[review.confidence]} · 체크는 확인 표시이며 실제 수행 기록을 바꾸지 않아. 기준 루틴 변경은 별도 승인이 필요해.</p>{error && <p role="alert">{error}</p>}</section>
 }
 function ReportLines({ title, rows }) { return rows?.length ? <div className="report-lines"><strong>{title}</strong><ul>{rows.map((line, i) => <li key={i}>{line}</li>)}</ul></div> : null }
 function ArchivedReport({ row }) {
