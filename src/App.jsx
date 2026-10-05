@@ -303,7 +303,7 @@ function App() {
       <main>
         {screen === 'today' && <TodayScreen nextDay={nextDay} history={history.filter((session) => session.status !== 'started')} importNotice={importNotice} onDismissImport={() => setImportNotice('')} onStartDay={startDay} onOpenRoutine={openRoutine} />}
         {screen === 'routine' && <RoutineScreen selectedDay={selectedDay} setSelectedDayId={setSelectedDayId} onStartDay={startDay} />}
-        {screen === 'report' && <RecordsScreen history={history} completedSets={completedSets} focusDate={recordFocus.date} focusSessionId={recordFocus.sessionId} onDataChanged={refreshInsights} onResume={startDay} />}
+        {screen === 'report' && <RecordsScreen history={history} completedSets={completedSets} focusDate={recordFocus.date} focusSessionId={recordFocus.sessionId} onDataChanged={refreshInsights} onResume={startDay} onOpenCloud={() => showScreen('cloud')} />}
         {screen === 'cloud' && <CloudScreen cloud={cloud} />}
       </main>
       <nav className="bottom-nav" aria-label="주요 메뉴">
