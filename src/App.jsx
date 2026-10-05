@@ -21,11 +21,14 @@ import {
   Plus,
   RotateCcw,
   Save,
+  SlidersHorizontal,
   Sparkles,
   TimerReset,
   Trash2,
   X,
 } from 'lucide-react'
+import DisplaySettings from './components/DisplaySettings.jsx'
+import { readPreferences, applyPreferences, tactileFeedback } from './lib/uiPreferences.js'
 import RecordsScreen from './components/RecordsScreen.jsx'
 import CloudScreen, { cloudStatus } from './components/CloudScreen.jsx'
 import { useCloudSync } from './lib/cloud/useCloudSync.js'
@@ -84,6 +87,8 @@ function formatDuration(seconds) { if (!seconds) return '기록 없음'; const m
 
 function App() {
   const [screen, setScreen] = useState('today')
+  const [preferences, setPreferences] = useState(readPreferences)
+  useEffect(() => { applyPreferences(preferences) }, [preferences])
   const [selectedDayId, setSelectedDayId] = useState(routine.days[0].id)
   const [activeWorkout, setActiveWorkout] = useState(false)
   const [workoutDate, setWorkoutDate] = useState(localDateKey)
@@ -283,7 +288,7 @@ function App() {
     if (!timer.running) return undefined
     const interval = window.setInterval(() => setTimer((current) => {
       if (current.remaining <= 1) {
-        navigator.vibrate?.([120, 80, 120])
+        tactileFeedback([120, 80, 120])
         return { ...current, running: false, remaining: 0 }
       }
       return { ...current, remaining: current.remaining - 1 }
@@ -300,17 +305,18 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header className="app-header"><div className="brand-mark" aria-hidden="true">YP</div><div className="brand-name"><span>YONGHO</span><strong>PERFORMANCE</strong></div><button className="cloud-status-button" aria-label="계정과 동기화" onClick={() => showScreen('cloud')}><Cloud size={16} /><span>{cloudStatus(cloud)}</span></button></header>
-      <main>
+      <header className="app-header"><div className="brand-mark" aria-hidden="true">YP</div><div className="brand-name"><span>YONGHO</span><strong>PERFORMANCE</strong></div><button className="cloud-status-button" aria-label="계정과 동기화" onClick={() => showScreen('cloud')}><Cloud size={16} /><span>{cloudStatus(cloud)}</span></button><button className="display-settings-button" aria-label="화면과 터치 설정" onClick={() => showScreen('settings')}><SlidersHorizontal size={20} /></button></header>
+      <main key={screen} className="page-content">
         {screen === 'today' && <TodayScreen nextDay={nextDay} history={history.filter((session) => session.status !== 'started')} importNotice={importNotice} onDismissImport={() => setImportNotice('')} onStartDay={startDay} onOpenRoutine={openRoutine} />}
         {screen === 'routine' && <RoutineScreen selectedDay={selectedDay} setSelectedDayId={setSelectedDayId} onStartDay={startDay} />}
         {screen === 'report' && <RecordsScreen history={history} completedSets={completedSets} focusDate={recordFocus.date} focusSessionId={recordFocus.sessionId} onDataChanged={refreshInsights} onResume={startDay} onOpenCloud={() => showScreen('cloud')} />}
         {screen === 'cloud' && <CloudScreen cloud={cloud} />}
+        {screen === 'settings' && <DisplaySettings preferences={preferences} onChange={setPreferences} onBack={() => showScreen('today')} />}
       </main>
       <nav className="bottom-nav" aria-label="주요 메뉴">
-        <button className={screen === 'today' ? 'active' : ''} onClick={() => showScreen('today')}><Home size={21} /><span>오늘</span></button>
-        <button className={screen === 'routine' ? 'active' : ''} onClick={() => showScreen('routine')}><Dumbbell size={21} /><span>루틴</span></button>
-        <button className={screen === 'report' ? 'active' : ''} onClick={() => showScreen('report')}><BarChart3 size={21} /><span>기록</span></button>
+        <button aria-current={screen === 'today' ? 'page' : undefined} className={screen === 'today' ? 'active' : ''} onClick={() => showScreen('today')}><Home size={21} /><span>오늘</span></button>
+        <button aria-current={screen === 'routine' ? 'page' : undefined} className={screen === 'routine' ? 'active' : ''} onClick={() => showScreen('routine')}><Dumbbell size={21} /><span>루틴</span></button>
+        <button aria-current={screen === 'report' ? 'page' : undefined} className={screen === 'report' ? 'active' : ''} onClick={() => showScreen('report')}><BarChart3 size={21} /><span>기록</span></button>
       </nav>
       <RestTimer timer={timer} setTimer={setTimer} />
     </div>
@@ -326,9 +332,9 @@ function TodayScreen({ nextDay, history, importNotice, onDismissImport, onStartD
   return <>
     {importNotice && <section className="import-notice"><Check size={18} /><span>{importNotice}</span><button onClick={onDismissImport} aria-label="알림 닫기"><X size={16} /></button></section>}
     <section className="page-heading home-heading"><p>{formatToday()}</p><h1>이번 주 {weekSessions.length}<em>/4</em></h1><span>요일이 밀려도 괜찮아. 가능한 날에 다음 세션을 이어가면 돼.</span></section>
-    <section className="weekly-score" aria-label={`이번 주 ${weekSessions.length}회 운동 완료`}><div className="score-copy"><span>WEEKLY GOAL</span><strong>{weekSessions.length >= 4 ? '이번 주 완료' : `${4 - weekSessions.length}회 남음`}</strong></div><div className="goal-dots">{[0, 1, 2, 3].map((index) => <i className={index < weekSessions.length ? 'done' : ''} key={index}>{index < weekSessions.length && <Check size={15} />}</i>)}</div></section>
-    <section className="next-session-card"><div className="next-label"><span>NEXT SESSION</span><span>추천 {nextDay.recommendedDay}요일 · 언제든 가능</span></div><div className="next-session-title"><span>{nextDay.sessionLabel}</span><div><h2>{nextDay.name}</h2><p>{nextDay.focus}</p></div></div><div className="next-meta"><span><Clock3 size={16} /> {nextDay.duration}</span><span><Dumbbell size={16} /> {nextDay.exercises.length}개 운동</span></div><button className="primary-button" onClick={() => onStartDay(nextDay.id)}><Play size={19} fill="currentColor" /> 이 루틴 시작</button><button className="text-button" onClick={() => onOpenRoutine(nextDay.id)}>운동 구성 먼저 보기</button></section>
-    <section className="section-block"><div className="section-heading"><div><span>FLEXIBLE 4-DAY</span><h2>오늘 다른 루틴을 할래?</h2></div></div><div className="routine-launcher">{routine.days.map((day) => { const completed = completedIds.has(day.id); return <button className={`routine-launch ${completed ? 'completed' : ''}`} key={day.id} onClick={() => onStartDay(day.id)}><span className="session-letter">{completed ? <Check size={20} /> : day.sessionLabel}</span><span><strong>{day.name}</strong><small>추천 {day.recommendedDay} · {day.duration}</small></span><Play size={17} fill="currentColor" /></button> })}</div></section>
+    <section className="weekly-score" aria-label={`이번 주 ${weekSessions.length}회 운동 완료`}><div className="score-copy"><span>이번 주 목표</span><strong>{weekSessions.length >= 4 ? '이번 주 완료' : `${4 - weekSessions.length}회 남음`}</strong></div><div className="goal-dots">{[0, 1, 2, 3].map((index) => <i className={index < weekSessions.length ? 'done' : ''} key={index}>{index < weekSessions.length && <Check size={15} />}</i>)}</div></section>
+    <section className="next-session-card"><div className="next-label"><span>다음 운동</span><span>추천 {nextDay.recommendedDay}요일 · 언제든 가능</span></div><div className="next-session-title"><span>{nextDay.sessionLabel}</span><div><h2>{nextDay.name}</h2><p>{nextDay.focus}</p></div></div><div className="next-meta"><span><Clock3 size={16} /> {nextDay.duration}</span><span><Dumbbell size={16} /> {nextDay.exercises.length}개 운동</span></div><button className="primary-button" onClick={() => onStartDay(nextDay.id)}><Play size={19} fill="currentColor" /> 이 루틴 시작</button><button className="text-button" onClick={() => onOpenRoutine(nextDay.id)}>운동 구성 먼저 보기</button></section>
+    <section className="section-block"><div className="section-heading"><div><span>원하는 날, 원하는 루틴</span><h2>오늘 다른 루틴을 할래?</h2></div></div><div className="routine-launcher">{routine.days.map((day) => { const completed = completedIds.has(day.id); return <button className={`routine-launch ${completed ? 'completed' : ''}`} key={day.id} onClick={() => onStartDay(day.id)}><span className="session-letter">{completed ? <Check size={20} /> : day.sessionLabel}</span><span><strong>{day.name}</strong><small>추천 {day.recommendedDay} · {day.duration}</small></span><Play size={17} fill="currentColor" /></button> })}</div></section>
     <section className="home-stats"><article><span>이번 주</span><strong>{weekSessions.length}<small>회</small></strong><p>목표 4회</p></article><article><span>이번 달</span><strong>{monthSessions.length}<small>회</small></strong><p>{monthLabel(monthKey(today))}</p></article></section>
     <section className="coach-note"><Sparkles size={20} /><div><strong>기준 루틴과 오늘 기록은 분리돼</strong><p>오늘 세트·중량·RIR을 바꿔도 다음 세션의 기준 루틴은 그대로 유지돼. 실제 컨디션에 맞게 기록하면 돼.</p></div></section>
   </>
@@ -390,7 +396,7 @@ function WorkoutScreen({ day: baselineDay, dateKey, onBack, onFinish, onStartTim
     }
     const id = await saveSet(entry)
     updateLocalLog({ ...entry, id, deletedAt: null })
-    if (startRest && row.completed) onStartTimer(restSeconds)
+    if (startRest && row.completed) { tactileFeedback(); onStartTimer(restSeconds) }
   })
   const handleDelete = (exercise, row) => write(async () => {
     const deleted = await deleteSet({ ...row, date, dayId: day.id, exerciseId: exercise.id, setIndex: row.setIndex })
@@ -446,23 +452,34 @@ function LogExerciseCard({ exercise, index, logs, previous, previousReview, rest
   const [restSeconds, setRestSeconds] = useState(restValue)
   const [note, setNote] = useState(exerciseNote)
   const [rows, setRows] = useState(() => makeRows(exercise, logs))
+  const [savingRows, setSavingRows] = useState(new Set())
+  const nextRowIndex = rows.find((row) => !row.completed)?.setIndex
+  const savedCompleted = logs.filter((row) => row.completed && !row.deletedAt).length
   const latest = useRef({ rows, note, restSeconds }); latest.current = { rows, note, restSeconds }
   useEffect(() => registerFlush(exercise.id, async () => {
     for (const row of latest.current.rows) await onSave(exercise, row, false, latest.current.restSeconds)
     await onNoteChange(exercise.id, latest.current.note)
   }), [registerFlush, exercise, onSave, onNoteChange])
   const updateRow = (setIndex, patch) => setRows((current) => current.map((row) => row.setIndex === setIndex ? { ...row, ...patch } : row))
-  const persistRow = (row, patch = {}, startRest = false) => { const next = { ...row, ...patch }; updateRow(row.setIndex, patch); return onSave(exercise, next, startRest, restSeconds).catch(() => {}) }
+  const persistRow = async (row, patch = {}, startRest = false) => {
+    const next = { ...row, ...patch }; updateRow(row.setIndex, patch)
+    setSavingRows((current) => new Set([...current, row.setIndex]))
+    try { await onSave(exercise, next, startRest, restSeconds) } catch {
+      if ('completed' in patch) updateRow(row.setIndex, { completed: row.completed })
+      // Keep numeric input; the parent displays the failed save.
+    }
+    finally { setSavingRows((current) => { const next = new Set(current); next.delete(row.setIndex); return next }) }
+  }
   const addRow = () => setRows((current) => [...current, { setIndex: Math.max(-1, ...current.map((row) => row.setIndex), ...logs.map((row) => row.setIndex)) + 1, setType: 'work', weight: exercise.targetWeight ?? '', weightLabel: '', reps: '', rir: exercise.rir ?? '', completed: false }])
   const removeRow = async (row) => { try { await onDelete(exercise, row); setRows((current) => current.filter((item) => item.setIndex !== row.setIndex)) } catch { /* Parent shows the error; keep the input. */ } }
   const previousText = previous.length ? previous.map((row) => `${setTypeLabels[row.setType] ? `${setTypeLabels[row.setType]} ` : ''}${row.weightLabel || (row.weight != null ? `${row.weight}kg` : '–')} × ${row.reps ?? '–'}`).join(' · ') : '첫 기록 — 오늘이 기준점이 된다'
   const changeRest = (next) => { const safe = Math.max(15, Math.min(600, next)); setRestSeconds(safe); onRestChange(exercise.id, safe).catch(() => {}) }
 
   return <article className="log-card"><div className="log-card-head"><span className="exercise-number">{String(index + 1).padStart(2, '0')}</span><div><h2>{detail.name}</h2><p>기준 {exercise.sets} × {exercise.reps} · RIR {exercise.rir}</p></div><button className="rest-chip" onClick={() => setRestOpen((value) => !value)}><Clock3 size={14} /> {formatClock(restSeconds)}</button></div>
-    {restOpen && <div className="rest-editor"><span>이 운동의 오늘 휴식</span><button onClick={() => changeRest(restSeconds - 15)}><Minus size={16} /></button><strong>{formatClock(restSeconds)}</strong><button onClick={() => changeRest(restSeconds + 15)}><Plus size={16} /></button><small>완료 체크 시 자동 시작</small></div>}
+    {restOpen && <div className="rest-editor"><span>이 운동의 오늘 휴식</span><button aria-label="휴식 15초 줄이기" onClick={() => changeRest(restSeconds - 15)}><Minus size={16} /></button><strong>{formatClock(restSeconds)}</strong><button aria-label="휴식 15초 늘리기" onClick={() => changeRest(restSeconds + 15)}><Plus size={16} /></button><small>완료 체크 시 자동 시작</small></div>}
     <div className="last-record"><History size={16} /><span><small>지난 기록</small>{previousText}</span></div><div className="live-cue"><Flame size={17} /><strong>{detail.shortCue}</strong></div>
     {previousReview && <details className="previous-coach-note"><summary>지난 회고 · 이번에 확인할 것</summary><p>{previousReview.action.action}</p><p>확인: {previousReview.action.check}</p><small>{previousReview.date} GPT 회고{previousReview.stale ? " · 원본 수정 전 분석" : ""} · 제안이며 기준값은 그대로야.</small></details>}
-    <div className="set-list"><div className="set-list-head"><span>오늘 실제 수행</span><small>각 세트는 독립적으로 저장돼</small></div>{rows.map((row, displayIndex) => <div className={`set-row-v2 ${row.completed ? 'completed' : ''}`} key={row.setIndex}><div className="set-row-top"><strong>{displayIndex + 1}</strong><select value={row.setType} aria-label={`${detail.name} ${displayIndex + 1}세트 유형`} onChange={(event) => persistRow(row, { setType: event.target.value })}>{Object.entries(setTypeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><button className="delete-set" onClick={() => removeRow(row)} aria-label="세트 삭제"><Trash2 size={16} /></button></div><div className="set-fields"><label><span>KG</span><input inputMode="decimal" type="number" min="0" step="0.5" value={row.weight} onChange={(event) => updateRow(row.setIndex, { weight: event.target.value, weightLabel: '' })} onBlur={() => onSave(exercise, row, false, restSeconds).catch(() => {})} placeholder={row.weightLabel || '–'} /></label><label><span>REPS</span><input inputMode="numeric" type="number" min="0" step="1" value={row.reps} onChange={(event) => updateRow(row.setIndex, { reps: event.target.value })} onBlur={() => onSave(exercise, row, false, restSeconds).catch(() => {})} placeholder="–" /></label><label><span>RIR</span><input inputMode="decimal" value={row.rir} onChange={(event) => updateRow(row.setIndex, { rir: event.target.value })} onBlur={() => onSave(exercise, row, false, restSeconds).catch(() => {})} placeholder="–" /></label><button className="complete-set" onClick={() => persistRow(row, { completed: !row.completed }, !row.completed)} aria-label={`${detail.name} ${displayIndex + 1}세트 ${row.completed ? '완료 취소' : '완료'}`}>{row.completed && <Check size={20} strokeWidth={3} />}</button></div></div>)}</div>
+    <div className="set-list"><div className="set-list-head"><span>오늘 실제 수행</span><small>{savedCompleted} / {rows.length}세트 저장</small></div>{rows.map((row, displayIndex) => <div className={`set-row-v2 ${row.completed ? 'completed' : ''} ${row.setIndex === nextRowIndex ? 'current-set' : ''}`} key={row.setIndex}><div className="set-row-top"><strong>{displayIndex + 1}<span>세트</span></strong>{row.setIndex === nextRowIndex && <small className="current-set-label">다음 세트</small>}<select value={row.setType} aria-label={`${detail.name} ${displayIndex + 1}세트 유형`} onChange={(event) => persistRow(row, { setType: event.target.value })}>{Object.entries(setTypeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><button className="delete-set" onClick={() => removeRow(row)} aria-label="세트 삭제"><Trash2 size={16} /></button></div><div className="set-fields"><label><span>KG</span><input aria-label={`${detail.name} ${displayIndex + 1}세트 중량`} inputMode="decimal" type="number" min="0" step="0.5" value={row.weight} onChange={(event) => updateRow(row.setIndex, { weight: event.target.value, weightLabel: '' })} onBlur={() => onSave(exercise, row, false, restSeconds).catch(() => {})} placeholder={row.weightLabel || '–'} /></label><label><span>REPS</span><input aria-label={`${detail.name} ${displayIndex + 1}세트 반복수`} inputMode="numeric" type="number" min="0" step="1" value={row.reps} onChange={(event) => updateRow(row.setIndex, { reps: event.target.value })} onBlur={() => onSave(exercise, row, false, restSeconds).catch(() => {})} placeholder="–" /></label><label><span>RIR</span><input aria-label={`${detail.name} ${displayIndex + 1}세트 RIR`} inputMode="decimal" value={row.rir} onChange={(event) => updateRow(row.setIndex, { rir: event.target.value })} onBlur={() => onSave(exercise, row, false, restSeconds).catch(() => {})} placeholder="–" /></label><button className="complete-set" aria-pressed={row.completed} disabled={savingRows.has(row.setIndex)} onClick={() => persistRow(row, { completed: !row.completed }, !row.completed)} aria-label={`${detail.name} ${displayIndex + 1}세트 ${row.completed ? '완료 취소' : '완료'}`}>{savingRows.has(row.setIndex) ? <span className="set-saving">저장</span> : row.completed ? <Check size={20} strokeWidth={3} /> : <Check size={20} />}<span className="sr-only">{row.completed ? '완료됨' : '완료 체크'}</span></button></div></div>)}</div>
     <button className="add-set" onClick={addRow}><Plus size={17} /> 오늘 세트 추가</button>
     <label className="exercise-note"><span>이 운동의 느낌</span><textarea value={note} onChange={(event) => setNote(event.target.value)} onBlur={() => onNoteChange(exercise.id, note).catch(() => {})} placeholder="자극 위치, 자세, 통증, 다음에 바꿀 점…" /></label>
     <button className="tips-toggle" onClick={() => setTipsOpen((value) => !value)} aria-expanded={tipsOpen}><span><Info size={17} /> 중량 · 자세 · 자극 · 웜업 팁</span><ChevronDown className={tipsOpen ? 'rotate' : ''} size={19} /></button>{tipsOpen && <TipDetails detail={detail} />}
@@ -506,7 +523,7 @@ function RestTimer({ timer, setTimer, workoutMode = false }) {
   if (!timer.visible) return null
   const progress = timer.total ? ((timer.total - timer.remaining) / timer.total) * 100 : 100
   const adjust = (amount) => setTimer((current) => ({ ...current, remaining: Math.max(0, current.remaining + amount), total: Math.max(15, current.total + amount) }))
-  return <aside className={`rest-timer ${timer.remaining === 0 ? 'done' : ''} ${workoutMode ? 'workout-mode' : ''}`} aria-live="polite"><div className="timer-ring" style={{ '--timer-progress': `${progress * 3.6}deg` }}><TimerReset size={19} /></div><div><span>{timer.remaining === 0 ? '다음 세트 준비' : '휴식 타이머'}</span><strong>{formatClock(timer.remaining)}</strong></div><button onClick={() => adjust(-15)} aria-label="15초 줄이기"><Minus size={17} /></button><button onClick={() => setTimer((current) => ({ ...current, running: !current.running }))} aria-label={timer.running ? '일시정지' : '계속'}>{timer.running ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><button onClick={() => adjust(15)} aria-label="15초 늘리기"><Plus size={17} /></button><button onClick={() => setTimer((current) => ({ ...current, remaining: current.total, running: true }))} aria-label="타이머 다시 시작"><RotateCcw size={18} /></button><button className="timer-close" onClick={() => setTimer((current) => ({ ...current, visible: false, running: false }))} aria-label="타이머 닫기">×</button></aside>
+  return <aside className={`rest-timer ${timer.remaining === 0 ? 'done' : ''} ${workoutMode ? 'workout-mode' : ''}`} aria-label="휴식 타이머"><div className="timer-ring" style={{ '--timer-progress': `${progress * 3.6}deg` }}><TimerReset size={19} /></div><div><span role="status">{timer.remaining === 0 ? '다음 세트 준비' : '휴식 타이머'}</span><strong role="timer">{formatClock(timer.remaining)}</strong></div><div className="timer-controls"><button onClick={() => adjust(-15)} aria-label="15초 줄이기"><Minus size={17} /></button><button onClick={() => setTimer((current) => ({ ...current, running: !current.running }))} aria-label={timer.running ? '일시정지' : '계속'}>{timer.running ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><button onClick={() => adjust(15)} aria-label="15초 늘리기"><Plus size={17} /></button><button onClick={() => setTimer((current) => ({ ...current, remaining: current.total, running: true }))} aria-label="타이머 다시 시작"><RotateCcw size={18} /></button></div><button className="timer-close" onClick={() => setTimer((current) => ({ ...current, visible: false, running: false }))} aria-label="타이머 닫기">×</button></aside>
 }
 
 export default App

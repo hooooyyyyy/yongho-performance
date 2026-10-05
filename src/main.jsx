@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import App from './App.jsx'
 import './styles.css'
+import { readPreferences, applyPreferences } from './lib/uiPreferences.js'
+
+applyPreferences(readPreferences())
 
 registerSW({ immediate: true })
 
