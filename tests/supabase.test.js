@@ -8,9 +8,12 @@ test('PostgreSQL migration, RLS and CAS protect two accounts and deny anonymous 
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
     create schema auth; create table auth.users(id uuid primary key);
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb) $$;
     grant usage on schema auth, public to anon, authenticated, service_role;
     grant execute on function auth.uid() to anon, authenticated, service_role;`)
   await db.exec(await readFile(new URL('../supabase/migrations/202610020001_workout_sync.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../supabase/migrations/202610070001_gpt_read_only.sql', import.meta.url), 'utf8'))
   await db.exec(await readFile(new URL('../supabase/tests/workout_rls.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../supabase/tests/gpt_read_only.sql', import.meta.url), 'utf8'))
   await db.close()
 })
