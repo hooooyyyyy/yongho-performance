@@ -86,7 +86,7 @@ function formatClock(seconds) { const safe = Math.max(0, Math.round(seconds || 0
 function formatDuration(seconds) { if (!seconds) return '기록 없음'; const minutes = Math.round(seconds / 60); return minutes >= 60 ? `${Math.floor(minutes / 60)}시간 ${minutes % 60}분` : `${minutes}분` }
 
 function App() {
-  const [screen, setScreen] = useState('today')
+  const [screen, setScreen] = useState(() => new URLSearchParams(window.location.search).has('authorization_id') ? 'cloud' : 'today')
   const [preferences, setPreferences] = useState(readPreferences)
   useEffect(() => { applyPreferences(preferences) }, [preferences])
   const [selectedDayId, setSelectedDayId] = useState(routine.days[0].id)

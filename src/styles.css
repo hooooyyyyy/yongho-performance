@@ -665,3 +665,7 @@ input { font-variant-numeric: tabular-nums; }
   .timer-controls button { width: 100%; }
   .workout-shell { padding-bottom: calc(160px + var(--safe-bottom)); }
 }
+
+.gpt-connection textarea, .gpt-connection input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: var(--surface-2); font-size: 16px; line-height: 1.5; }
+.gpt-connection p { overflow-wrap: anywhere; }
+.gpt-connection details { margin-top: 16px; }

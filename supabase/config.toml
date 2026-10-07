@@ -1,0 +1,5 @@
+project_id = "yongho-performance"
+
+# OAuth discovery must pass the gateway. User JWT verification happens in the function.
+[functions.workout-mcp]
+verify_jwt = false
