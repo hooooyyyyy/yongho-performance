@@ -40,6 +40,8 @@ import { parseQuickWorkout } from './lib/quickParser.js'
 import { buildExerciseInsights, buildTrainingSummary } from './lib/insights.js'
 import {
   completeWorkoutSession,
+  cancelEmptyWorkoutSession,
+  isEmptyWorkoutSession,
   reportArchive,
   deleteSet,
   getAllCompletedSets,
@@ -47,6 +49,7 @@ import {
   getPreviousExerciseLog,
   getPreviousExerciseReview,
   getWorkoutHistory,
+  getWorkoutSession,
   importWorkoutData,
   saveSet,
   startWorkoutSession,
@@ -296,7 +299,7 @@ function App() {
     return () => window.clearInterval(interval)
   }, [timer.running])
 
-  const startDay = (dayId, date = localDateKey()) => { setWorkoutDate(date); setSelectedDayId(dayId); setActiveWorkout(true); window.scrollTo({ top: 0 }) }
+  const startDay = (dayId, date = localDateKey()) => { const other = history.find((s) => s.date === date && s.status === 'started' && s.dayId !== dayId); if (other && !window.confirm(`이 날짜에 ${routine.days.find((d) => d.id === other.dayId)?.name ?? other.dayId} 기록이 열려 있어. 별도로 다른 루틴을 시작할까? 기존 기록은 유지돼.`)) return; setWorkoutDate(date); setSelectedDayId(dayId); setActiveWorkout(true); window.scrollTo({ top: 0 }) }
   const openRoutine = (dayId) => { setSelectedDayId(dayId); setScreen('routine'); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const showScreen = (nextScreen) => { setScreen(nextScreen); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const startTimer = useCallback((seconds) => setTimer({ visible: true, running: true, remaining: seconds, total: seconds }), [])
@@ -307,7 +310,7 @@ function App() {
     <div className="app-shell">
       <header className="app-header"><div className="brand-mark" aria-hidden="true">YP</div><div className="brand-name"><span>YONGHO</span><strong>PERFORMANCE</strong></div><button className="cloud-status-button" aria-label="계정과 동기화" onClick={() => showScreen('cloud')}><Cloud size={16} /><span>{cloudStatus(cloud)}</span></button><button className="display-settings-button" aria-label="화면과 터치 설정" onClick={() => showScreen('settings')}><SlidersHorizontal size={20} /></button></header>
       <main key={screen} className="page-content">
-        {screen === 'today' && <TodayScreen nextDay={nextDay} history={history.filter((session) => session.status !== 'started')} importNotice={importNotice} onDismissImport={() => setImportNotice('')} onStartDay={startDay} onOpenRoutine={openRoutine} />}
+        {screen === 'today' && <TodayScreen nextDay={nextDay} history={history.filter((session) => session.status !== 'started')} pending={history.filter((session) => session.status === 'started' && session.date === localDateKey())} importNotice={importNotice} onDismissImport={() => setImportNotice('')} onStartDay={startDay} onOpenRoutine={openRoutine} />}
         {screen === 'routine' && <RoutineScreen selectedDay={selectedDay} setSelectedDayId={setSelectedDayId} onStartDay={startDay} />}
         {screen === 'report' && <RecordsScreen history={history} completedSets={completedSets} focusDate={recordFocus.date} focusSessionId={recordFocus.sessionId} onDataChanged={refreshInsights} onResume={startDay} onOpenCloud={() => showScreen('cloud')} />}
         {screen === 'cloud' && <CloudScreen cloud={cloud} />}
@@ -323,7 +326,7 @@ function App() {
   )
 }
 
-function TodayScreen({ nextDay, history, importNotice, onDismissImport, onStartDay, onOpenRoutine }) {
+function TodayScreen({ nextDay, history, pending = [], importNotice, onDismissImport, onStartDay, onOpenRoutine }) {
   const today = localDateKey()
   const week = getWeekRange(today)
   const weekSessions = history.filter((session) => inRange(session.date, week))
@@ -332,6 +335,7 @@ function TodayScreen({ nextDay, history, importNotice, onDismissImport, onStartD
   return <>
     {importNotice && <section className="import-notice"><Check size={18} /><span>{importNotice}</span><button onClick={onDismissImport} aria-label="알림 닫기"><X size={16} /></button></section>}
     <section className="page-heading home-heading"><p>{formatToday()}</p><h1>이번 주 {weekSessions.length}<em>/4</em></h1><span>요일이 밀려도 괜찮아. 가능한 날에 다음 세션을 이어가면 돼.</span></section>
+    {pending.map((s) => <section className="next-session-card" key={s.id}><span>오늘 저장 중인 운동 · {s.setCount}세트 완료</span><h2>{routine.days.find((d) => d.id === s.dayId)?.name ?? s.dayId}</h2><button className="primary-button" onClick={() => onStartDay(s.dayId, s.date)}>이 운동 이어서 기록</button></section>)}
     <section className="weekly-score" aria-label={`이번 주 ${weekSessions.length}회 운동 완료`}><div className="score-copy"><span>이번 주 목표</span><strong>{weekSessions.length >= 4 ? '이번 주 완료' : `${4 - weekSessions.length}회 남음`}</strong></div><div className="goal-dots">{[0, 1, 2, 3].map((index) => <i className={index < weekSessions.length ? 'done' : ''} key={index}>{index < weekSessions.length && <Check size={15} />}</i>)}</div></section>
     <section className="next-session-card"><div className="next-label"><span>다음 운동</span><span>추천 {nextDay.recommendedDay}요일 · 언제든 가능</span></div><div className="next-session-title"><span>{nextDay.sessionLabel}</span><div><h2>{nextDay.name}</h2><p>{nextDay.focus}</p></div></div><div className="next-meta"><span><Clock3 size={16} /> {nextDay.duration}</span><span><Dumbbell size={16} /> {nextDay.exercises.length}개 운동</span></div><button className="primary-button" onClick={() => onStartDay(nextDay.id)}><Play size={19} fill="currentColor" /> 이 루틴 시작</button><button className="text-button" onClick={() => onOpenRoutine(nextDay.id)}>운동 구성 먼저 보기</button></section>
     <section className="section-block"><div className="section-heading"><div><span>원하는 날, 원하는 루틴</span><h2>오늘 다른 루틴을 할래?</h2></div></div><div className="routine-launcher">{routine.days.map((day) => { const completed = completedIds.has(day.id); return <button className={`routine-launch ${completed ? 'completed' : ''}`} key={day.id} onClick={() => onStartDay(day.id)}><span className="session-letter">{completed ? <Check size={20} /> : day.sessionLabel}</span><span><strong>{day.name}</strong><small>추천 {day.recommendedDay} · {day.duration}</small></span><Play size={17} fill="currentColor" /></button> })}</div></section>
@@ -423,7 +427,7 @@ function WorkoutScreen({ day: baselineDay, dateKey, onBack, onFinish, onStartTim
   }
 
   const completed = logs.filter((item) => item.completed && !item.deletedAt).length
-  const elapsedSec = session?.durationSec ?? (session?.startedAt ? Math.max(0, Math.floor((now - new Date(session.startedAt).getTime()) / 1000)) : 0)
+  const elapsedSec = session?.status === 'completed' || session?.pausedAt ? session?.durationSec ?? 0 : (session?.durationSec ?? 0) + ((session?.activeStartedAt ?? session?.startedAt) ? Math.max(0, Math.floor((now - new Date(session.activeStartedAt ?? session.startedAt).getTime()) / 1000)) : 0)
   const flushInputs = async () => { for (const flush of [...flushers.current.values()]) await flush() }
   const finishWorkout = async () => {
     if (finishing) return
@@ -432,7 +436,7 @@ function WorkoutScreen({ day: baselineDay, dateKey, onBack, onFinish, onStartTim
     catch (error) { setSaveError(`완료하지 못했어: ${error.message}. 입력은 유지돼. 다시 시도해줘.`) }
     finally { setFinishing(false) }
   }
-  const closeWorkout = async () => { if (finishing) return; setFinishing(true); try { await writes.current.finish(flushInputs, async () => { window.dispatchEvent(new CustomEvent('yp:log-updated')); onBack() }) } catch (error) { setSaveError(`저장하지 못했어: ${error.message}`) } finally { setFinishing(false) } }
+  const closeWorkout = async () => { if (finishing) return; setFinishing(true); try { await writes.current.finish(flushInputs, async () => { const latest = await getWorkoutSession(date, day.id); const rows = await getDayLog(date, day.id, { includeDeleted: true }); if (isEmptyWorkoutSession(latest, rows)) await cancelEmptyWorkoutSession(date, day.id); else if (latest?.status === 'started') await updateWorkoutSession(date, day.id, { durationSec: elapsedSec, pausedAt: new Date().toISOString(), activeStartedAt: null }); window.dispatchEvent(new CustomEvent('yp:log-updated')); onBack() }) } catch (error) { setSaveError(`저장하지 못했어: ${error.message}`) } finally { setFinishing(false) } }
 
   return <div className="workout-shell"><header className="workout-header"><button className="icon-button" disabled={finishing} onClick={closeWorkout} aria-label="운동 화면 닫기"><ArrowLeft size={23} /></button><div><span>{day.sessionLabel} SESSION · {date.replaceAll('-', '.')}</span><h1>{day.name}</h1></div><strong>{formatClock(elapsedSec)}</strong></header><div className="workout-progress"><span style={{ width: `${Math.min(100, (completed / Math.max(1, day.exercises.reduce((sum, exercise) => sum + exercise.sets, 0))) * 100)}%` }} /></div>
     <main className="workout-main">{saveError && <p className="record-message" role="alert">{saveError}</p>}<fieldset className="workout-fields" disabled={finishing || loading}><section className="session-intro"><div><Clock3 size={18} /><span>진행 {formatDuration(elapsedSec)}</span></div><p>{day.focus}</p></section>
@@ -440,7 +444,7 @@ function WorkoutScreen({ day: baselineDay, dateKey, onBack, onFinish, onStartTim
       {loading ? <div className="loading-card">기록을 불러오는 중…</div> : day.exercises.map((exercise, index) => <LogExerciseCard key={`${exercise.id}-${externalRevision}`} exercise={exercise} index={index} logs={logs.filter((item) => item.exerciseId === exercise.id)} previous={previous[exercise.id] ?? []} previousReview={previousReview[exercise.id]} restValue={session?.restOverrides?.[exercise.id] ?? exercise.rest} exerciseNote={session?.exerciseNotes?.[exercise.id] ?? ''} onSave={handleSetSave} onDelete={handleDelete} onRestChange={updateRest} onNoteChange={updateExerciseNote} registerFlush={registerFlush} />)}
       {!loading && <QuickLogCard day={day} onImport={importQuickLog} onJournalOnly={async (text) => patchSession({ journal: [session?.journal, text].filter(Boolean).join('\n\n') })} />}
       {!loading && <SessionNotesCard key={`notes-${externalRevision}`} session={session} onSave={patchSession} registerFlush={registerFlush} />}
-      </fieldset><button className="finish-button" disabled={completed === 0 || loading || finishing} onClick={finishWorkout}><Check size={20} /> {finishing ? '입력을 저장하는 중…' : session?.status === 'completed' ? '운동 기록 업데이트' : '운동 완료'} · {formatDuration(elapsedSec)}</button><p className="storage-note"><Info size={15} /> 완료하면 이 날짜의 캘린더 회고로 이동해. 주간 리포트는 원하는 때 따로 보관할 수 있어.</p>
+      </fieldset><button className="finish-button" disabled={completed === 0 || loading || finishing} onClick={finishWorkout}><Check size={20} /> {finishing ? '입력을 저장하는 중…' : session?.status === 'completed' ? '운동 기록 업데이트' : '운동 완료'} · {formatDuration(elapsedSec)}</button><button className="text-button" disabled={loading || finishing} onClick={closeWorkout}>{session?.status === 'completed' ? '저장하고 닫기' : '저장하고 잠시 나가기'}</button><p className="storage-note">입력이 없는 시작 기록은 나갈 때 취소돼. 입력이 있으면 보존하고 시간을 멈춰.</p><p className="storage-note"><Info size={15} /> 완료하면 이 날짜의 캘린더 회고로 이동해. 주간 리포트는 원하는 때 따로 보관할 수 있어.</p>
     </main>
   </div>
 }

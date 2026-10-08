@@ -108,3 +108,49 @@ test('deleted session does not become orphan legacy attendance or analysis input
   assert.ok(!(await storage.getWorkoutHistory()).some((s) => s.date === entry.date))
   assert.ok(!(await storage.getAllCompletedSets()).some((s) => s.date === entry.date))
 })
+
+test('empty session cancellation is soft, syncable and can be started again', async () => {
+  const date = '2031-01-01'; const day = { id: 'cancel-example', exercises: [{ id: 'sample', sets: 2, targetWeight: 20, rir: '2' }] }
+  await storage.startWorkoutSession(date, day)
+  await storage.saveSet({ date, dayId: day.id, exerciseId: 'sample', setIndex: 0, weight: 20, reps: null, rir: '2', completed: false })
+  await storage.cancelEmptyWorkoutSession(date, day.id)
+  assert.equal(await storage.getWorkoutSession(date, day.id), undefined)
+  const snapshot = await storage.repository.snapshot()
+  assert.ok(snapshot.sessions.find((s) => s.date === date).deletedAt)
+  assert.ok(snapshot.outbox.some((s) => s.id === sessionId(date, day.id)))
+  const restarted = await storage.startWorkoutSession(date, day)
+  assert.equal(restarted.deletedAt, null)
+  assert.equal(restarted.status, 'started')
+  assert.equal((await storage.getDayLog(date, day.id)).length, 1)
+})
+
+test('cancel never removes completed sets, partial input, journals or completed sessions', async () => {
+  const day = { id: 'protected-example', exercises: [{ id: 'sample', sets: 2, targetWeight: 20, rir: '2' }] }
+  for (const [i, patch] of [{ completed: true }, { reps: 8 }, { weight: 25 }, { rir: '1' }, { note: 'synthetic note' }].entries()) {
+    const date = `2031-02-0${i + 1}`
+    await storage.startWorkoutSession(date, day)
+    await storage.saveSet({ date, dayId: day.id, exerciseId: 'sample', setIndex: 0, weight: 20, reps: null, rir: '2', completed: false, ...patch })
+    await assert.rejects(storage.cancelEmptyWorkoutSession(date, day.id))
+    assert.ok(await storage.getWorkoutSession(date, day.id))
+  }
+  await storage.startWorkoutSession('2031-02-07', day)
+  await storage.updateWorkoutSession('2031-02-07', day.id, { journal: 'synthetic journal' })
+  await assert.rejects(storage.cancelEmptyWorkoutSession('2031-02-07', day.id))
+  await storage.startWorkoutSession('2031-02-08', day)
+  await storage.completeWorkoutSession('2031-02-08', day.id, { durationSec: 10 })
+  await assert.rejects(storage.cancelEmptyWorkoutSession('2031-02-08', day.id))
+})
+
+test('resume preserves accumulated duration and does not restart completed sessions', async () => {
+  const date = '2031-03-01'; const dayId = 'resume-example'
+  await storage.startWorkoutSession(date, dayId)
+  await storage.updateWorkoutSession(date, dayId, { durationSec: 120, pausedAt: '2031-03-01T00:00:00Z', activeStartedAt: null })
+  const resumed = await storage.startWorkoutSession(date, dayId)
+  assert.equal(resumed.pausedAt, null); assert.equal(resumed.durationSec, 120)
+  assert.ok(resumed.activeStartedAt)
+  const repeated = await storage.startWorkoutSession(date, dayId)
+  assert.equal(repeated.revision, resumed.revision)
+  await storage.completeWorkoutSession(date, dayId, { durationSec: 130 })
+  const completed = await storage.startWorkoutSession(date, dayId)
+  assert.equal(completed.status, 'completed'); assert.equal(completed.durationSec, 130)
+})
