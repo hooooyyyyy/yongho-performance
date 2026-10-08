@@ -1,6 +1,6 @@
 import { createReportArchive } from './reportArchive.js'
 import { coachReviewIsStale } from './workoutImport.js'
-import { createLocalWorkoutRepository, sessionId, setId, sameContent } from './repositories/localWorkoutRepository.js'
+import { createLocalWorkoutRepository, sessionId, setId, sameContent, normalizeRecord, recordKey } from './repositories/localWorkoutRepository.js'
 
 export const repository = createLocalWorkoutRepository()
 export const reportArchive = createReportArchive(repository)
@@ -46,11 +46,44 @@ export async function getPreviousExerciseReview(exerciseId, beforeDate) {
 export async function startWorkoutSession(date, dayOrId) {
   const dayId = typeof dayOrId === 'string' ? dayOrId : dayOrId.id
   return repository.mutate('sessions', sessionId(date, dayId), (existing) => {
-    if (existing) return null
+    if (existing && !existing.deletedAt) {
+      if (existing.status === 'started' && existing.pausedAt) return { ...existing, pausedAt: null, activeStartedAt: new Date().toISOString() }
+      return null
+    }
     return { date, dayId, status: 'started', startedAt: new Date().toISOString(),
+      deletedAt: null,
       routineSnapshot: typeof dayOrId === 'string' ? null : structuredClone(dayOrId),
       restOverrides: {}, condition: {}, journal: '', exerciseNotes: {}, aiAnalysis: '' }
   })
+}
+
+// Only untouched templates are cancellable. Inspect the parent and children in one
+// transaction so a simultaneous completed set or journal cannot be lost.
+export function isEmptyWorkoutSession(session, sets) {
+  if (!session || session.status !== 'started' || session.deletedAt) return false
+  if (session.journal?.trim() || session.journalEntries?.some((e) => e.text?.trim()) || session.aiAnalysis || session.coachReview) return false
+  if (Object.values(session.condition ?? {}).some((v) => v != null && String(v).trim()) || Object.values(session.exerciseNotes ?? {}).some((v) => v?.trim()) || Object.keys(session.restOverrides ?? {}).length) return false
+  return sets.every((s) => {
+    if (s.deletedAt) return false
+    const baseline = session.routineSnapshot?.exercises?.find((e) => e.id === s.exerciseId)
+    return baseline && !s.completed && s.reps == null && !s.note?.trim() && !s.weightLabel && (s.setType ?? 'work') === 'work' && s.setIndex < baseline.sets && String(s.weight ?? '') === String(baseline.targetWeight ?? '') && String(s.rir ?? '') === String(baseline.rir ?? '')
+  })
+}
+
+export async function cancelEmptyWorkoutSession(date, dayId) {
+  const id = sessionId(date, dayId)
+  const result = await repository.transaction(['sessions', 'sets', 'outbox'], 'readwrite', async (tx) => {
+    const existing = await tx.objectStore('sessions').get(id)
+    const sets = await tx.objectStore('sets').index('by-date-day').getAll([date, dayId])
+    if (!isEmptyWorkoutSession(existing, sets)) throw new Error('세트 입력이나 일지가 있어 시작을 취소할 수 없어. 기록은 그대로 보존했어.')
+    const now = new Date().toISOString()
+    const row = normalizeRecord('sessions', { ...existing, deletedAt: now, updatedAt: now, revision: crypto.randomUUID() })
+    await tx.objectStore('sessions').put(row)
+    await tx.objectStore('outbox').put({ key: recordKey('sessions', id), kind: 'sessions', id, revision: row.revision })
+    return row
+  })
+  repository.notifyWrite()
+  return result
 }
 
 function mergeSession(existing, date, dayId, patch) {
@@ -77,7 +110,7 @@ export async function completeWorkoutSession(date, dayId, patch = {}) {
     const completedAt = existing?.completedAt ?? new Date().toISOString()
     const startedAt = existing?.startedAt ?? completedAt
     const durationSec = patch.durationSec ?? existing?.durationSec ?? Math.max(0, Math.round((new Date(completedAt) - new Date(startedAt)) / 1000))
-    const next = { ...mergeSession(existing, date, dayId, patch), status: 'completed', startedAt, completedAt, durationSec, durationSource: patch.durationSource ?? existing?.durationSource ?? 'measured' }
+    const next = { ...mergeSession(existing, date, dayId, patch), status: 'completed', pausedAt: null, activeStartedAt: null, startedAt, completedAt, durationSec, durationSource: patch.durationSource ?? existing?.durationSource ?? 'measured' }
     return existing && sameContent(existing, next) ? null : next
   })
 }
